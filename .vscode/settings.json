@@ -2,6 +2,20 @@
     "cmake.sourceDirectory": "/cpfs/data/shared/public/liupeng/code/cutlass-kernels/cutlass/examples/03_visualize_layout",
     "files.associations": {
         "*.py": "python",
-        "__config": "cpp"
+        "__config": "cpp",
+        "array": "cpp",
+        "atomic": "cpp",
+        "unordered_map": "cpp",
+        "vector": "cpp",
+        "exception": "cpp",
+        "iterator": "cpp",
+        "functional": "cpp",
+        "random": "cpp",
+        "initializer_list": "cpp",
+        "iosfwd": "cpp",
+        "new": "cpp",
+        "tuple": "cpp",
+        "type_traits": "cpp",
+        "utility": "cpp"
     }
 }

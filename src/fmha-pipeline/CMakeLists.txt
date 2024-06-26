@@ -25,7 +25,7 @@ set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 # set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -g -G --expt-relaxed-constexpr --use_fast_math -t 8")
 # set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -O0 -g -G")
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -O0 -g -lineinfo --expt-relaxed-constexpr --use_fast_math --generate-code=arch=compute_90a,code=[sm_90a]")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -O0 -g -G -lineinfo --expt-relaxed-constexpr --use_fast_math --generate-code=arch=compute_90a,code=[sm_90a]")
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-extended-lambda --expt-relaxed-constexpr -Xcompiler=-Wno-psabi -Xcompiler=-fno-strict-aliasing")  # -Xnvlink=--verbose -Xptxas=--verbose
 
 # 添加宏定义

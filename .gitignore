@@ -2,3 +2,4 @@ cutlass/
 src/fmha/fmha_forward.d
 src/fmha/build
 src/fmha-pipeline/build
+src/fmha-pipeline/release
