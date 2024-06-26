@@ -26,6 +26,33 @@
                 "trace": false,
                 "traceResponse": false
             }
+        },
+        {
+            "name": "fp8_fmha",
+            "type": "cuda-gdb",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/fmha-pipeline/build/fmha_fp8",
+            "args": [],  // Add any command line arguments here
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/src/fmha-pipeline",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/local/cuda/bin/cuda-gdb",  // Adjust the path to cuda-gdb if necessary
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "CMake: build",  // You can specify a task to run before debugging starts, like 'make build'
+            "logging": {
+                "engineLogging": false,
+                "trace": false,
+                "traceResponse": false
+            }
         }
+
     ]
 }

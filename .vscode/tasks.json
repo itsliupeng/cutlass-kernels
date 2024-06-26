@@ -7,7 +7,8 @@
             "command": "cmake",
             "args": [
                 "-B",
-                "${workspaceFolder}/src/fmha/build",
+                // "${workspaceFolder}/src/fmha/build",
+                "${workspaceFolder}/src/fmha-pipeline/build",
                 "-S",
                 "${workspaceFolder}",
                 "-DCMAKE_BUILD_TYPE=Debug"
@@ -28,7 +29,8 @@
             "command": "cmake",
             "args": [
                 "--build",
-                "${workspaceFolder}/src/fmha/build",
+                // "${workspaceFolder}/src/fmha/build",
+                "${workspaceFolder}/src/fmha-pipeline/build",
                 "--parallel", "4"  // This line sets the number of max jobs to 1
             ],
             "group": {

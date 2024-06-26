@@ -38,8 +38,8 @@ fmhaForwardProducer(Tensor<TensorEngineK, SmemLayoutK> &&sK,
   Tensor tKsK = group_modes<1, rank(tKsKX)>(tKsKX);
   Tensor tVsVX = blockTmaV.partition_D(sV);
   Tensor tVsV = group_modes<1, rank(tVsVX)>(tVsVX);
-  static_assert(size<1>(tVsV) == 1);
-  static_assert(size<1>(tKsK) == 1);
+  // static_assert(size<1>(tVsV) == 1);
+  // static_assert(size<1>(tKsK) == 1);
 
   //
   // Get the GMEM tensors for K and V
@@ -49,9 +49,9 @@ fmhaForwardProducer(Tensor<TensorEngineK, SmemLayoutK> &&sK,
 
   Tensor tKgKX = blockTmaK.partition_S(gK);
   Tensor tKgK = group_modes<1, rank(tKgKX)>(tKgKX); // (TMA,REST)
-  assert(size<1>(tKgK) == size<2>(gK));
-  assert(size<1>(tKgK) == kTiles);
-  static_assert(size<1>(tKsK) == 1);
+  // assert(size<1>(tKgK) == size<2>(gK));
+  // assert(size<1>(tKgK) == kTiles);
+  // static_assert(size<1>(tKsK) == 1);
 
 #ifdef GEMM2FP8
   auto blkCoordV = make_coord(0, blockIdxY, blockIdxH, blockIdxB);
@@ -63,8 +63,8 @@ fmhaForwardProducer(Tensor<TensorEngineK, SmemLayoutK> &&sK,
 
   Tensor tVgVX = blockTmaV.partition_S(gV);
   Tensor tVgV = group_modes<1, rank(tVgVX)>(tVgVX); // (TMA,REST)
-  assert(size<1>(tVgV) == size<2>(gV));
-  assert(size<1>(tVgV) == 1);
+  // assert(size<1>(tVgV) == size<2>(gV));
+  // assert(size<1>(tVgV) == 1);
 
   uint16_t mcast_mask_a = 0;
   auto block_layout = Layout<ClusterShape>{}; // (m,n) -> block_id

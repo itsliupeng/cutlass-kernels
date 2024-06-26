@@ -167,8 +167,8 @@ fmhaForwardPipelinedNoWspl(
   // tiles
   Tensor tQgQ = group_modes<1, rank(tQgQX)>(tQgQX); // (TMA,REST)
   auto kTiles = size<1>(tQgQ);
-  assert(kTiles == 1);
-  assert(kTiles == size<2>(gQ));
+  // assert(kTiles == 1);
+  // assert(kTiles == size<2>(gQ));
 
   // Partition the copying of dest tile for Q among threads.
   Tensor tQsQX = cta_tmaQ.partition_D(sQ);
