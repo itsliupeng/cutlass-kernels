@@ -1,0 +1,7 @@
+{
+    "cmake.sourceDirectory": "/cpfs/data/shared/public/liupeng/code/cutlass-kernels/cutlass/examples/03_visualize_layout",
+    "files.associations": {
+        "*.py": "python",
+        "__config": "cpp"
+    }
+}

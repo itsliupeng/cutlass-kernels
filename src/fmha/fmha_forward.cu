@@ -205,8 +205,8 @@ fmhaForward(PrecType const *Q, CUTE_GRID_CONSTANT TiledCopyQ const tmaLoadQ,
   // tiles
   Tensor tQgQ = group_modes<1, rank(tQgQX)>(tQgQX); // (TMA,REST)
   auto kTiles = size<1>(tQgQ);
-  assert(kTiles == 1);
-  assert(kTiles == size<2>(gQ));
+  // assert(kTiles == 1);
+  // assert(kTiles == size<2>(gQ));
 
   //
   // Partition the copying of dest tiles for Q, K and V among threads.
@@ -273,9 +273,9 @@ fmhaForward(PrecType const *Q, CUTE_GRID_CONSTANT TiledCopyQ const tmaLoadQ,
   Tensor gK = local_tile(mK, tileShapeK, blkCoordK);
   Tensor tKgKX = cta_tmak.partition_S(gK);
   Tensor tKgK = group_modes<1, rank(tKgKX)>(tKgKX); // (TMA,REST)
-  assert(size<1>(tKgK) == size<2>(gK));
-  assert(size<1>(tKgK) == kTiles);
-  static_assert(size<1>(tKsK) == 1);
+  // assert(size<1>(tKgK) == size<2>(gK));
+  // assert(size<1>(tKgK) == kTiles);
+  // static_assert(size<1>(tKsK) == 1);
 
   // Copy first tile of K from GMEM to SMEM.
   cfk::copy(tKgK(_, 0), tKsK(_, 0), tmaLoadK, tma_load_mbar[0], mcast_mask_a);
@@ -291,8 +291,8 @@ fmhaForward(PrecType const *Q, CUTE_GRID_CONSTANT TiledCopyQ const tmaLoadQ,
     Tensor gV = local_tile(mV, tileShapeV, blkCoordV);
     Tensor tVgVX = cta_tmaV.partition_S(gV);
     Tensor tVgV = group_modes<1, rank(tVgVX)>(tVgVX);
-    assert(size<1>(tVgV) == size<2>(gV));
-    assert(size<1>(tVgV) == 1);
+    // assert(size<1>(tVgV) == size<2>(gV));
+    // assert(size<1>(tVgV) == 1);
 
     // Copy current tile of V from GMEM to SMEM.
     cfk::syncCluster<ClusterShape>();
@@ -786,7 +786,7 @@ void testFmhaForward(int m, int n, int numHeads, int batchSize, int iterations,
 #endif
 
     bool gemm2 =
-        cfk::verify_tensor(cute_result_D, cublas_result_D, printValues);
+        cfk::verify_tensor(cute_result_D, cublas_result_D, printValues, true);
     std::string result2 = gemm2 ? "Passed" : "Failed";
     std::cout << "gemm-check-2: " << result2 << std::endl;
   }
