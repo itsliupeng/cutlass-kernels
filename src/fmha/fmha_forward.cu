@@ -196,6 +196,11 @@ fmhaForward(PrecType const *Q, CUTE_GRID_CONSTANT TiledCopyQ const tmaLoadQ,
   auto cta_tmak = tmaLoadK.get_slice(cluster_local_block_id.x);
   auto cta_tmaV = tmaLoadV.get_slice(cluster_local_block_id.x);
 
+  if (thread0()) {
+    print("TMA Box size:  "); print("%d", typename decltype(tmaLoadQ)::Tiler_MN{}); print("\n");
+    print("TMA desc     : "); print("%s", tmaLoadQ.tma_desc_); print("\n");
+  }
+
   // Get the block of Q for this CTA using the block coordinates.
   auto blkCoordQ = make_coord(blockIdxX, 0, blockIdxH, blockIdxB);
   Tensor gQ = local_tile(mQ, tileShapeQ, blkCoordQ);

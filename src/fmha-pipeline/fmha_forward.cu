@@ -145,37 +145,24 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
   auto ptrK = reinterpret_cast<PrecType const *>(tensorK);
   auto ptrV = reinterpret_cast<Gemm2Type const *>(tensorV);
   auto tileShapeQ = make_shape(bM{}, bK{});
-  auto smemLayoutQ =
-      tile_to_shape(getSmemLayoutK<MmaA, HEADDIM>(),
-                    make_shape(shape<0>(tileShapeQ), shape<1>(tileShapeQ)));
-  Layout gmemLayoutQ =
-      make_layout(make_shape(M, K, H, B), make_stride(K * H, 1, K, H * M * K));
+  auto smemLayoutQ = tile_to_shape(getSmemLayoutK<MmaA, HEADDIM>(), make_shape(shape<0>(tileShapeQ), shape<1>(tileShapeQ)));
+  Layout gmemLayoutQ = make_layout(make_shape(M, K, H, B), make_stride(K * H, 1, K, H * M * K));
   Tensor gQ = make_tensor(ptrQ, gmemLayoutQ);
-  auto tmaQ =
-      make_tma_copy(SM90_TMA_LOAD{}, gQ, smemLayoutQ, tileShapeQ, Int<1>{});
+  auto tmaQ = make_tma_copy(SM90_TMA_LOAD{}, gQ, smemLayoutQ, tileShapeQ, Int<1>{});
 
   auto tileShapeK = make_shape(bN{}, bK{});
   // For pipelined FMHA, the third dimension for SMEM K is the number of stages.
-  auto smemLayoutK = tile_to_shape(
-      getSmemLayoutK<MmaB, HEADDIM>(),
-      make_shape(shape<0>(tileShapeK), shape<1>(tileShapeK), STAGES()));
-  Layout gmemLayoutK =
-      make_layout(make_shape(N, K, H, B), make_stride(K * H, 1, K, H * N * K));
+  auto smemLayoutK = tile_to_shape(getSmemLayoutK<MmaB, HEADDIM>(), make_shape(shape<0>(tileShapeK), shape<1>(tileShapeK), STAGES()));
+  Layout gmemLayoutK = make_layout(make_shape(N, K, H, B), make_stride(K * H, 1, K, H * N * K));
   Tensor gK = make_tensor(ptrK, gmemLayoutK);
-  auto tmak = make_tma_copy(TMA_LOAD{}, gK, smemLayoutK(_, _, 0), tileShapeK,
-                            size<0>(ClusterShape{}));
+  auto tmak = make_tma_copy(TMA_LOAD{}, gK, smemLayoutK(_, _, 0), tileShapeK, size<0>(ClusterShape{}));
 
   // Use only during debugging, direct writes to GMEM.
   auto tileShapeS = make_shape(bM{}, bN{});
-  Layout gmemLayoutS =
-      make_layout(make_shape(M, N, H, B), make_stride(N, 1, N * M, H * M * N));
+  Layout gmemLayoutS = make_layout(make_shape(M, N, H, B), make_stride(N, 1, N * M, H * M * N));
   // Used only for Second matmul with Q and V.
-  auto smemLayoutAtomS =
-      cute::conditional_return<is_same_v<MmaA, cutlass::half_t>>(
-          getSmemLayoutK<MmaA, bN{}>(), GMMA::Layout_K_INTER_Atom<MmaA>{});
-  auto smemLayoutS = tile_to_shape(
-      smemLayoutAtomS,
-      make_shape(shape<0>(tileShapeS), shape<1>(tileShapeS), STAGES()));
+  auto smemLayoutAtomS =cute::conditional_return<is_same_v<MmaA, cutlass::half_t>>(getSmemLayoutK<MmaA, bN{}>(), GMMA::Layout_K_INTER_Atom<MmaA>{});
+  auto smemLayoutS = tile_to_shape(smemLayoutAtomS, make_shape(shape<0>(tileShapeS), shape<1>(tileShapeS), STAGES()));
 
 // We assume V is NOT transposed in memory by default.
 // For now, if we enable V FP8, then we will also transpose V offline.
@@ -183,14 +170,10 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
   auto tileShapeV = make_shape(bN{}, bK{});
   auto smemLayoutAtomV = getSmemLayoutK<Mma2B, HEADDIM>();
   // For pipelined FMHA, the third dimension for SMEM V is the number of stages.
-  auto smemLayoutV = tile_to_shape(
-      smemLayoutAtomV,
-      make_shape(shape<0>(tileShapeV), shape<1>(tileShapeV), STAGES()));
-  Layout gmemLayoutV =
-      make_layout(make_shape(N, K, H, B), make_stride(K * H, 1, K, H * K * N));
+  auto smemLayoutV = tile_to_shape(smemLayoutAtomV, make_shape(shape<0>(tileShapeV), shape<1>(tileShapeV), STAGES()));
+  Layout gmemLayoutV = make_layout(make_shape(N, K, H, B), make_stride(K * H, 1, K, H * K * N));
   Tensor gV = make_tensor(ptrV, gmemLayoutV);
-  auto tmaV = make_tma_copy(TMA_LOAD{}, gV, smemLayoutV(_, _, 0), tileShapeV,
-                            size<0>(ClusterShape{}));
+  auto tmaV = make_tma_copy(TMA_LOAD{}, gV, smemLayoutV(_, _, 0), tileShapeV, size<0>(ClusterShape{}));
 
   // Layout for Vtranspose. For use in GEMM-II.
   // Note this is the transpose in terms of the view, not in terms of memory.
@@ -348,11 +331,13 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
                                decltype(smemLayoutV), decltype(smemLayoutO),
                                ClusterShape>));
   cfk::utils::set_smem_size(smem_size, kernel);
+  printf("smem = %d\n", int(smem_size));
 
   // Set the THREAD BLOCK (CTA) dimensions.
   // #threads in CTA = #threads in MMA (128 by default) + 128 (for WS).
   // For example, this is 3*128 (= 3 warpgroups) for CTA256 and WS.
   dim3 block_dims(ctaSize);
+  printf("ctaSize = %d\n", int(ctaSize));
 
   // Set the GRID dimensions (3-D).
   // First dimension = # of blocks of Q.
