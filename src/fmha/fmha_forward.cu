@@ -44,6 +44,7 @@
 
 #include "online_softmax.h"
 
+#undef SINSMEM
 // Default kQueriesPerBlock is 64.
 #ifdef QBLKSIZE
 constexpr int kQueriesPerBlock = QBLKSIZE;
@@ -170,9 +171,9 @@ fmhaForward(PrecType const *Q, CUTE_GRID_CONSTANT TiledCopyQ const tmaLoadQ,
   Tensor mO = tmaStoreO.get_tma_tensor(shape(gmemLayoutO));
 
   TiledMma0 tiledMma0;
-  auto threadMma0 = tiledMma0.get_thread_slice(threadIdx.x);
+  ThrMMA threadMma0 = tiledMma0.get_thread_slice(threadIdx.x);
   TiledMma1 tiledMma1;
-  auto threadMma1 = tiledMma1.get_thread_slice(threadIdx.x);
+  ThrMMA threadMma1 = tiledMma1.get_thread_slice(threadIdx.x);
 
   uint32_t block_rank_in_cluster = cute::block_rank_in_cluster();
   constexpr uint32_t cluster_shape_x = get<0>(ClusterShape{});
@@ -465,52 +466,53 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
   auto ptrQ = reinterpret_cast<MmaA const *>(tensorQ);
   auto ptrK = reinterpret_cast<MmaB const *>(tensorK);
   auto ptrV = reinterpret_cast<MmaB const *>(tensorV);
-  auto tileShapeQ = make_shape(bM{}, bK{});
-  auto smemLayoutQ =
-      tile_to_shape(GMMA::Layout_K_SW128_Atom<MmaA>{}, tileShapeQ);
-  Layout gmemLayoutQ =
-      make_layout(make_shape(M, K, H, B), make_stride(K * H, 1, K, H * M * K));
-  Tensor gQ = make_tensor(ptrQ, gmemLayoutQ);
-  auto tmaQ =
-      make_tma_copy(SM90_TMA_LOAD{}, gQ, smemLayoutQ, tileShapeQ, Int<1>{});
 
+  // Q
+  auto tileShapeQ = make_shape(bM{}, bK{});
+  auto smemLayoutQ = tile_to_shape(GMMA::Layout_K_SW128_Atom<MmaA>{}, tileShapeQ);
+  Layout gmemLayoutQ = make_layout(make_shape(M, K, H, B), make_stride(K * H, 1, K, H * M * K));
+  Tensor gQ = make_tensor(ptrQ, gmemLayoutQ);
+  auto tmaQ = make_tma_copy(SM90_TMA_LOAD{}, gQ, smemLayoutQ, tileShapeQ, Int<1>{});
+  // std::cout << "gmemLayoutQ: " << std::endl;
+  // print_layout(gmemLayoutQ);
+  // std::cout << ", smemLayoutQ: ";
+  // print_layout(smemLayoutQ);
+  // std::cout << std::endl;
+
+  // K
   auto tileShapeK = make_shape(bN{}, bK{});
-  auto smemLayoutK =
-      tile_to_shape(GMMA::Layout_K_SW128_Atom<MmaB>{}, tileShapeK);
-  Layout gmemLayoutK =
-      make_layout(make_shape(N, K, H, B), make_stride(K * H, 1, K, H * N * K));
+  auto smemLayoutK = tile_to_shape(GMMA::Layout_K_SW128_Atom<MmaB>{}, tileShapeK);
+  Layout gmemLayoutK = make_layout(make_shape(N, K, H, B), make_stride(K * H, 1, K, H * N * K));
   Tensor gK = make_tensor(ptrK, gmemLayoutK);
-  auto tmak = make_tma_copy(TMA_LOAD{}, gK, smemLayoutK, tileShapeK,
-                            size<0>(ClusterShape{}));
+  auto tmak = make_tma_copy(TMA_LOAD{}, gK, smemLayoutK, tileShapeK, size<0>(ClusterShape{}));
+  // std::cout << "gmemLayoutK: " << print_layout(gmemLayoutK) << ", smemLayoutK: " << print_layout(smemLayoutK) << std::endl;
 
   // Use only during debugging, direct writes to GMEM.
   auto tileShapeS = make_shape(bM{}, bN{});
-  Layout gmemLayoutS =
-      make_layout(make_shape(M, N, H, B), make_stride(N, 1, N * M, H * M * N));
+  Layout gmemLayoutS = make_layout(make_shape(M, N, H, B), make_stride(N, 1, N * M, H * M * N));
   // Used only for Second matmul with Q and V.
-  auto smemLayoutS =
-      tile_to_shape(GMMA::Layout_K_SW128_Atom<MmaA>{}, tileShapeS);
+  auto smemLayoutS = tile_to_shape(GMMA::Layout_K_SW128_Atom<MmaA>{}, tileShapeS);
+  // std::cout << "gmemLayoutS: " << print_layout(gmemLayoutS) << ", smemLayoutS: " << print_layout(smemLayoutS) << std::endl;
 
+  // V
   auto tileShapeV = make_shape(bN{}, bK{});
-  auto smemLayoutV =
-      tile_to_shape(GMMA::Layout_K_SW128_Atom<MmaB>{}, tileShapeV);
-  Layout gmemLayoutV =
-      make_layout(make_shape(N, K, H, B), make_stride(K * H, 1, K, H * K * N));
+  auto smemLayoutV = tile_to_shape(GMMA::Layout_K_SW128_Atom<MmaB>{}, tileShapeV);
+  Layout gmemLayoutV = make_layout(make_shape(N, K, H, B), make_stride(K * H, 1, K, H * K * N));
   Tensor gV = make_tensor(ptrV, gmemLayoutV);
-  auto tmaV = make_tma_copy(TMA_LOAD{}, gV, smemLayoutV, tileShapeV,
-                            size<0>(ClusterShape{}));
+  auto tmaV = make_tma_copy(TMA_LOAD{}, gV, smemLayoutV, tileShapeV, size<0>(ClusterShape{}));
+  // std::cout << "gmemLayoutV: " << print_layout(gmemLayoutV) << ", smemLayoutV: " << print_layout(smemLayoutV) << std::endl;
 
   // Layout for Vtranspose. For use in GEMM-II.
   auto tileShapeVt = make_shape(bK{}, bN{});
-  auto smemLayoutVt =
-      composition(smemLayoutV, make_layout(tileShapeVt, GenRowMajor{}));
-
+  auto smemLayoutVt = composition(smemLayoutV, make_layout(tileShapeVt, GenRowMajor{}));
+  // std::cout << "smemLayoutVt: " << print_layout(smemLayoutVt) << std::endl;
+  
+  // O
   auto tileShapeO = make_shape(bM{}, bK{});
-  Layout gmemLayoutO =
-      make_layout(make_shape(M, K, H, B), make_stride(K * H, 1, K, H * M * K));
+  Layout gmemLayoutO = make_layout(make_shape(M, K, H, B), make_stride(K * H, 1, K, H * M * K));
   Tensor gO = make_tensor(tensorO, gmemLayoutQ);
-  auto tmaO =
-      make_tma_copy(SM90_TMA_STORE{}, gO, smemLayoutQ, tileShapeO, Int<1>{});
+  auto tmaO = make_tma_copy(SM90_TMA_STORE{}, gO, smemLayoutQ, tileShapeO, Int<1>{});
+  // std::cout << "gmemLayoutO: " << print_layout(gmemLayoutO) << std::endl;
 
 // Enable this flag for 256 threads (or 8 warps) per CTA.
 // Disabled by default.
@@ -526,19 +528,10 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
       cute::GMMA::ss_op_selector<MmaA, MmaB, MmaC, Shape<bM, bN, bK>>(),
       MmaTileShape{}));
 
-#ifdef SINSMEM
-  // USE SS version of GMMA for GEMM-II.
-  using TiledMma1 = decltype(cute::make_tiled_mma(
-      cute::GMMA::ss_op_selector<MmaA, MmaB, MmaC, Shape<bM, bK, bN>,
-                                 GMMA::Major::K, GMMA::Major::MN>(),
-      MmaTileShape{}));
-#else
   // USE RS version of GMMA for GEMM-II (Default).
   using TiledMma1 = decltype(cute::make_tiled_mma(
-      cute::GMMA::rs_op_selector<MmaA, MmaB, MmaC, Shape<bM, bK, bN>,
-                                 GMMA::Major::K, GMMA::Major::MN>(),
+      cute::GMMA::rs_op_selector<MmaA, MmaB, MmaC, Shape<bM, bK, bN>, GMMA::Major::K, GMMA::Major::MN>(),
       MmaTileShape{}));
-#endif
 
   // col-major for MI and S_prime (used only for verification).
   Layout gmemLayoutMi = make_layout(make_shape(M, H, B), GenColMajor{});
@@ -555,9 +548,9 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
       decltype(gmemLayoutMi), ClusterShape>;
 
   // Compute and set dynamic shared memory size.
-  auto smem_size = int(
-      sizeof(SharedStorage<MmaA, decltype(smemLayoutQ), decltype(smemLayoutK),
+  auto smem_size = int(sizeof(SharedStorage<MmaA, decltype(smemLayoutQ), decltype(smemLayoutK),
                            decltype(smemLayoutS), decltype(smemLayoutV)>));
+  printf("smem = %d\n", int(smem_size));
   cfk::utils::set_smem_size(smem_size, kernel);
 
   //
@@ -567,6 +560,7 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
   // Set the THREAD BLOCK (CTA) dimensions.
   // #threads in CTA = #threads in MMA (128 by default).
   dim3 block_dims(size(TiledMma0{}));
+  printf("block_dims = %d\n", block_dims);
 
   // Set the GRID dimensions (3-D).
   // First dimension = # of blocks of Q.
@@ -748,43 +742,6 @@ void testFmhaForward(int m, int n, int numHeads, int batchSize, int iterations,
     thrust::host_vector<PrecType> cublas_result_S = devS;
     thrust::host_vector<PrecType> cublas_result_D = devD;
 
-#ifdef COPYOUTMM0
-    // Our intermediate write to S is unscaled. So scale it before checking with
-    // CUTLASS.
-    if (usePreScaling) {
-      for (int j = 0; j < cute_result_S.size(); ++j) {
-        cute_result_S[j] = cute_result_S[j] * softmax_scale;
-      }
-    }
-    bool gemm1 =
-        cfk::verify_tensor(cute_result_S, cublas_result_S, printValues);
-    std::string result1 = gemm1 ? "Passed" : "Failed";
-    std::cout << "gemm-check-1: " << result1 << std::endl;
-#endif
-
-#ifdef COPYOUTMI
-    // Our intermediate write to MI is scaled with log2e. So un-scale it before
-    // checking with CUTLASS.
-    if (!usePow2) {
-      for (int j = 0; j < miHostOut.size(); ++j) {
-        miHostOut[j] = miHostOut[j] * (1.0 / kLog2e);
-      }
-    }
-    bool maxCheck = cfk::verify_tensor(miHostOut, miRefHostOut, printValues);
-    std::string maxCheckResult = maxCheck ? "Passed" : "Failed";
-    std::cout << "max-check: " << maxCheckResult << std::endl;
-
-    // Our intermediate write to sPrime is not reciprocal. So invert it before
-    // checking with CUTLASS.
-    for (int j = 0; j < sPrimeHostOut.size(); ++j) {
-      sPrimeHostOut[j] = (1.0 / sPrimeHostOut[j]);
-    }
-    bool sumCheck =
-        cfk::verify_tensor(sPrimeHostOut, sPrimeRefHostOut, printValues);
-    std::string sumCheckResult = sumCheck ? "Passed" : "Failed";
-    std::cout << "sum-check: " << sumCheckResult << std::endl;
-#endif
-
     bool gemm2 =
         cfk::verify_tensor(cute_result_D, cublas_result_D, printValues, true);
     std::string result2 = gemm2 ? "Passed" : "Failed";
@@ -830,7 +787,7 @@ int main(int argc, char const **argv) {
   bool refCheck, printValues;
   cmd.get_cmd_line_argument("batch-size", batchSize, 16);
   cmd.get_cmd_line_argument("dim-size", dimSize, 2048);
-  cmd.get_cmd_line_argument("head-size", kHeadSize, 64);
+  cmd.get_cmd_line_argument("head-size", kHeadSize, 128);
   cmd.get_cmd_line_argument("seq-length", seqLength, 1024);
   cmd.get_cmd_line_argument("iterations", iterations, 20);
   cmd.get_cmd_line_argument("num-cuda-streams", nStreams, 1);
