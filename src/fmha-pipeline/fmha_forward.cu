@@ -151,6 +151,7 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
   Layout gmemLayoutQ =
       make_layout(make_shape(M, K, H, B), make_stride(K * H, 1, K, H * M * K));
   Tensor gQ = make_tensor(ptrQ, gmemLayoutQ);
+  print("------------------ tma Q ------------------\n");
   auto tmaQ =
       make_tma_copy(SM90_TMA_LOAD{}, gQ, smemLayoutQ, tileShapeQ, Int<1>{});
 
@@ -162,6 +163,7 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
   Layout gmemLayoutK =
       make_layout(make_shape(N, K, H, B), make_stride(K * H, 1, K, H * N * K));
   Tensor gK = make_tensor(ptrK, gmemLayoutK);
+  print("------------------ tma K ------------------\n");
   auto tmak = make_tma_copy(TMA_LOAD{}, gK, smemLayoutK(_, _, 0), tileShapeK,
                             size<0>(ClusterShape{}));
 
@@ -231,6 +233,7 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
   Layout gmemLayoutV =
       make_layout(make_shape(K, N, H, B), make_stride(N * H, 1, N, H * K * N));
   Tensor gV = make_tensor(ptrV, gmemLayoutV);
+  print("------------------ tma V ------------------\n");
   auto tmaV = make_tma_copy(TMA_LOAD{}, gV, smemLayoutV(_, _, 0), tileShapeV,
                             size<0>(ClusterShape{}));
 
@@ -248,6 +251,7 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
       tile_to_shape(getSmemLayoutK<OutputType, bK{}>(),
                     make_shape(shape<0>(tileShapeQ), shape<1>(tileShapeQ)));
   Tensor gO = make_tensor(tensorO, gmemLayoutO);
+  print("------------------ tma O ------------------\n");
   auto tmaO =
       make_tma_copy(SM90_TMA_STORE{}, gO, smemLayoutO, tileShapeO, Int<1>{});
 
@@ -270,6 +274,7 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
       ss_op_selector_custom<MmaA, MmaB, MmaC, Shape<bM, bN, bK>>(),
       MmaTileShape{}));
 #endif
+  print("TiledMma0: \n"); print(TiledMma0{}); print("\n");
 
 #ifdef SINSMEM
   // USE SS version of GMMA for GEMM-II.
@@ -284,9 +289,10 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
                             GMMA::Major::K, majorV>(),
       MmaTileShape{}));
 #endif
+  print("TiledMma1: \n"); print(TiledMma1{}); print("\n");
 
   // col-major for MI and S_prime (used only for verification).
-  Layout gmemLayoutMi = make_layout(make_shape(M, H, B), GenColMajor{});
+  Layout gmemLayoutMi = make_layout(make_shape(M, H, B), LayoutLeft{});
 
   // We separate out the warp-specialized and non-pipelined 
   // versions using a compiler flag.
@@ -371,6 +377,18 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
 
   // Compute the no. of tiles of K matrix.
   auto nTilesOfK = ceil_div(size(N), size(bN{}));
+
+
+
+#if LP_DEBUG
+  if(cute::thread0()) {
+    print("  gQ : "); print(  gQ); print("\n");
+    print("  smemLayoutQ : "); print(smemLayoutQ); print("\n");
+    print("  gK : "); print(  gK); print("\n");
+    print("  gmemLayoutK : "); print(gmemLayoutK); print("\n");
+    print("  smemLayoutS : "); print(smemLayoutS); print("\n");
+  }
+#endif
 
   // Run the CUDA kernel for preferred number of iterations.
   for (int i = 0; i < iterations; ++i) {
@@ -724,7 +742,7 @@ int main(int argc, char const **argv) {
   bool refCheck, printValues, printDiffs;
   cmd.get_cmd_line_argument("batch-size", batchSize, 4);
   cmd.get_cmd_line_argument("dim-size", dimSize, 2048);
-  cmd.get_cmd_line_argument("head-size", kHeadSize, 256);
+  cmd.get_cmd_line_argument("head-size", kHeadSize, 512);
   cmd.get_cmd_line_argument("seq-length", seqLength, 8848);
   cmd.get_cmd_line_argument("iterations", iterations, 20);
   cmd.get_cmd_line_argument("num-cuda-streams", nStreams, 1);

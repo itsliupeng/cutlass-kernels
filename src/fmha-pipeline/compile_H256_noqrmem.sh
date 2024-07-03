@@ -15,4 +15,5 @@ fmha_forward.cu \
 -Wl,-rpath,'/usr/local/cuda/lib64' -Wl,-rpath,'/usr/local/cuda/lib' \
 -lcuda  -lcudadevrt -lcudart_static -lcublas -lrt -lpthread -ldl \
 -o release/fmha_forward_fp8_h256_noqrmem \
--DGEMM2FP8 -DQBLKSIZE=128 -DKBLKSIZE=128 -DCTA256 -DLP_DEBUG
+-DGEMM2FP8 -DQBLKSIZE=64 -DKBLKSIZE=64 -DCTA256 -DLP_DEBUG
+# -DGEMM2FP8 -DQBLKSIZE=128 -DKBLKSIZE=128 -DCTA256 -DLP_DEBUG ## good
