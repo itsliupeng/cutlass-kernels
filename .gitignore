@@ -4,3 +4,4 @@ src/fmha/build
 src/fmha-pipeline/build
 src/fmha-pipeline/release
 src/fmha/fmha_forward
+build

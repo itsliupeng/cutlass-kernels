@@ -200,7 +200,7 @@ fmhaForwardPipelinedNoWspl(
   Tensor tOrS = threadMma1.partition_fragment_A(sS(_, _, 0));
   auto tOrPLayout = ReshapeTStoTP()(tSrS, tOrS);
   auto reg2reg = ReorgCFp8toAFp8();
-
+  
 #ifdef QINRMEM
   Tensor tSsQ = threadMma0.partition_A(sQ);
   cfk::copy(tSsQ, tSrQ);
@@ -215,6 +215,20 @@ fmhaForwardPipelinedNoWspl(
   Tensor rowSum = make_fragment_like(rowMax);
   cute::fill(rowMax, -cutlass::platform::numeric_limits<SoftType>::infinity());
   cute::fill(rowSum, SoftType(0.0));
+
+
+#if 0
+  if(cute::thread0()) {
+    print("  mQ : "); print(  mQ); print("\n");
+    print("  gQ : "); print(  gQ); print("\n");
+    print("  sQ : "); print(  sQ); print("\n");
+    print("  tQgQX : "); print(  tQgQX); print("\n");
+    print("  tQgQ : "); print(  tQgQ); print("\n");
+
+    print("  rowMax : "); print(  rowMax); print("\n");
+    print("  rowSum : "); print(  rowSum); print("\n");
+  }
+#endif
 
   // ------------ Pipelining begins -------------------------------
 

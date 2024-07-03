@@ -148,6 +148,7 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
   auto smemLayoutQ = tile_to_shape(getSmemLayoutK<MmaA, HEADDIM>(), make_shape(shape<0>(tileShapeQ), shape<1>(tileShapeQ)));
   Layout gmemLayoutQ = make_layout(make_shape(M, K, H, B), make_stride(K * H, 1, K, H * M * K));
   Tensor gQ = make_tensor(ptrQ, gmemLayoutQ);
+  print("---------- tma Q ----------");
   auto tmaQ = make_tma_copy(SM90_TMA_LOAD{}, gQ, smemLayoutQ, tileShapeQ, Int<1>{});
 
   auto tileShapeK = make_shape(bN{}, bK{});
@@ -155,6 +156,7 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
   auto smemLayoutK = tile_to_shape(getSmemLayoutK<MmaB, HEADDIM>(), make_shape(shape<0>(tileShapeK), shape<1>(tileShapeK), STAGES()));
   Layout gmemLayoutK = make_layout(make_shape(N, K, H, B), make_stride(K * H, 1, K, H * N * K));
   Tensor gK = make_tensor(ptrK, gmemLayoutK);
+  print("---------- tma K ----------");
   auto tmak = make_tma_copy(TMA_LOAD{}, gK, smemLayoutK(_, _, 0), tileShapeK, size<0>(ClusterShape{}));
 
   // Use only during debugging, direct writes to GMEM.
@@ -163,6 +165,17 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
   // Used only for Second matmul with Q and V.
   auto smemLayoutAtomS =cute::conditional_return<is_same_v<MmaA, cutlass::half_t>>(getSmemLayoutK<MmaA, bN{}>(), GMMA::Layout_K_INTER_Atom<MmaA>{});
   auto smemLayoutS = tile_to_shape(smemLayoutAtomS, make_shape(shape<0>(tileShapeS), shape<1>(tileShapeS), STAGES()));
+
+
+#if 1
+  if(cute::thread0()) {
+    print("  gQ : "); print(  gQ); print("\n");
+    print("  smemLayoutQ : "); print(smemLayoutQ); print("\n");
+    print("  gK : "); print(  gK); print("\n");
+    print("  gmemLayoutK : "); print(gmemLayoutK); print("\n");
+    print("  smemLayoutS : "); print(smemLayoutS); print("\n");
+  }
+#endif
 
 // We assume V is NOT transposed in memory by default.
 // For now, if we enable V FP8, then we will also transpose V offline.
@@ -214,6 +227,15 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
   Layout gmemLayoutV =
       make_layout(make_shape(K, N, H, B), make_stride(N * H, 1, N, H * K * N));
   Tensor gV = make_tensor(ptrV, gmemLayoutV);
+
+#if 1
+  if(cute::thread0()) {
+    print("  smemLayoutV :"); print(smemLayoutV); print("\n");
+    print("  smemLayoutAtomV :"); print(smemLayoutAtomV); print("\n");
+  }
+#endif
+
+  print("---------- tma V ----------");
   auto tmaV = make_tma_copy(TMA_LOAD{}, gV, smemLayoutV(_, _, 0), tileShapeV,
                             size<0>(ClusterShape{}));
 
@@ -231,6 +253,7 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
       tile_to_shape(getSmemLayoutK<OutputType, bK{}>(),
                     make_shape(shape<0>(tileShapeQ), shape<1>(tileShapeQ)));
   Tensor gO = make_tensor(tensorO, gmemLayoutO);
+  print("---------- tma V ----------");
   auto tmaO =
       make_tma_copy(SM90_TMA_STORE{}, gO, smemLayoutO, tileShapeO, Int<1>{});
 
@@ -708,9 +731,9 @@ int main(int argc, char const **argv) {
   bool refCheck, printValues, printDiffs;
   cmd.get_cmd_line_argument("batch-size", batchSize, 4);
   cmd.get_cmd_line_argument("dim-size", dimSize, 2048);
-  cmd.get_cmd_line_argument("head-size", kHeadSize, 128);
-  cmd.get_cmd_line_argument("seq-length", seqLength, 4096);
-  cmd.get_cmd_line_argument("iterations", iterations, 20);
+  cmd.get_cmd_line_argument("head-size", kHeadSize, 512);
+  cmd.get_cmd_line_argument("seq-length", seqLength, 8448);
+  cmd.get_cmd_line_argument("iterations", iterations, 1000);
   cmd.get_cmd_line_argument("num-cuda-streams", nStreams, 1);
   cmd.get_cmd_line_argument("reference-check", refCheck, false);
   cmd.get_cmd_line_argument("print-values", printValues, false);
@@ -738,6 +761,10 @@ int main(int argc, char const **argv) {
                                             printValues, printDiffs, nStreams);
     } else if (kHeadSize == 256) {
       testFmhaForward<cutlass::half_t, 256>(seqLength, seqLength, numHeads,
+                                            batchSize, iterations, refCheck,
+                                            printValues, printDiffs, nStreams);
+    } else if (kHeadSize == 512) {
+      testFmhaForward<cutlass::half_t, 512>(seqLength, seqLength, numHeads,
                                             batchSize, iterations, refCheck,
                                             printValues, printDiffs, nStreams);
     } else {

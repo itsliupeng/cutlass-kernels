@@ -59,7 +59,7 @@ fmhaForwardConsumer(Gemm1Type const *Q, Gemm1Type const *K, Gemm2Type const *V,
   auto tOrP = make_tensor(tSrSPrec.data(), tOrPLayout);
   warpgroup_fence_operand(tSrS);
   // Issue GEMM-II.
-#if 1
+#if 0
   if (cute::thread0()) {
         print("\n");
         print(tOrPLayout); // (_4,_2,_2),_1,_4):((_1,_4,_8),_0,_16)
