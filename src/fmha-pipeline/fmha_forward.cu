@@ -348,6 +348,7 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
                                decltype(smemLayoutV), decltype(smemLayoutO),
                                ClusterShape>));
   cfk::utils::set_smem_size(smem_size, kernel);
+  printf("smem = %d, ctaSize = %d\n", int(smem_size), int(ctaSize));
 
   // Set the THREAD BLOCK (CTA) dimensions.
   // #threads in CTA = #threads in MMA (128 by default) + 128 (for WS).
