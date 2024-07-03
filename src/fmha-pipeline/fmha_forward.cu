@@ -723,8 +723,8 @@ int main(int argc, char const **argv) {
   bool refCheck, printValues, printDiffs;
   cmd.get_cmd_line_argument("batch-size", batchSize, 4);
   cmd.get_cmd_line_argument("dim-size", dimSize, 2048);
-  cmd.get_cmd_line_argument("head-size", kHeadSize, 128);
-  cmd.get_cmd_line_argument("seq-length", seqLength, 4096);
+  cmd.get_cmd_line_argument("head-size", kHeadSize, 256);
+  cmd.get_cmd_line_argument("seq-length", seqLength, 8848);
   cmd.get_cmd_line_argument("iterations", iterations, 20);
   cmd.get_cmd_line_argument("num-cuda-streams", nStreams, 1);
   cmd.get_cmd_line_argument("reference-check", refCheck, false);
@@ -770,19 +770,19 @@ int main(int argc, char const **argv) {
 #if 1
     if (kHeadSize == 64) {
       testFmhaForward<cutlass::float_e4m3_t, 64>(
-          seqLength, seqLength, numHeads, batchSize, iterations, refCheck,
+          seqLength, seqLength*2, numHeads, batchSize, iterations, refCheck,
           printValues, printDiffs, nStreams);
     } else if (kHeadSize == 128) {
       testFmhaForward<cutlass::float_e4m3_t, 128>(
-          seqLength, seqLength, numHeads, batchSize, iterations, refCheck,
+          seqLength, seqLength*2, numHeads, batchSize, iterations, refCheck,
           printValues, printDiffs, nStreams);
     } else if (kHeadSize == 256) {
       testFmhaForward<cutlass::float_e4m3_t, 256>(
-          seqLength, seqLength, numHeads, batchSize, iterations, refCheck,
+          seqLength, seqLength*2, numHeads, batchSize, iterations, refCheck,
           printValues, printDiffs, nStreams);
     } else if (kHeadSize == 512) {
       testFmhaForward<cutlass::float_e4m3_t, 512>(
-          seqLength, seqLength, numHeads, batchSize, iterations, refCheck,
+          seqLength, seqLength*2, numHeads, batchSize, iterations, refCheck,
           printValues, printDiffs, nStreams);
     } else {
       std::cout << "Unsupported head dim: " << kHeadSize << std::endl;
