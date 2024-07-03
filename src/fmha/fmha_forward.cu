@@ -196,10 +196,10 @@ fmhaForward(PrecType const *Q, CUTE_GRID_CONSTANT TiledCopyQ const tmaLoadQ,
   auto cta_tmak = tmaLoadK.get_slice(cluster_local_block_id.x);
   auto cta_tmaV = tmaLoadV.get_slice(cluster_local_block_id.x);
 
-  if (thread0()) {
-    print("TMA Box size:  "); print("%d", typename decltype(tmaLoadQ)::Tiler_MN{}); print("\n");
-    print("TMA desc     : "); print("%s", tmaLoadQ.tma_desc_); print("\n");
-  }
+  // if (thread0()) {
+  //   print("TMA Box size:  "); print(typename decltype(tmaLoadQ)::Tiler_MN{}); print("\n");
+  //   // print("TMA desc     : "); print(tmaLoadQ.tma_desc_); print("\n");
+  // }
 
   // Get the block of Q for this CTA using the block coordinates.
   auto blkCoordQ = make_coord(blockIdxX, 0, blockIdxH, blockIdxB);
@@ -792,7 +792,7 @@ int main(int argc, char const **argv) {
   bool refCheck, printValues;
   cmd.get_cmd_line_argument("batch-size", batchSize, 16);
   cmd.get_cmd_line_argument("dim-size", dimSize, 2048);
-  cmd.get_cmd_line_argument("head-size", kHeadSize, 128);
+  cmd.get_cmd_line_argument("head-size", kHeadSize, 512);
   cmd.get_cmd_line_argument("seq-length", seqLength, 1024);
   cmd.get_cmd_line_argument("iterations", iterations, 20);
   cmd.get_cmd_line_argument("num-cuda-streams", nStreams, 1);
@@ -817,6 +817,10 @@ int main(int argc, char const **argv) {
                                           printValues, nStreams);
   } else if (kHeadSize == 256) {
     testFmhaForward<cutlass::half_t, 256>(seqLength, seqLength, numHeads,
+                                          batchSize, iterations, refCheck,
+                                          printValues, nStreams);
+  } else if (kHeadSize == 512) {
+    testFmhaForward<cutlass::half_t, 512>(seqLength, seqLength, numHeads,
                                           batchSize, iterations, refCheck,
                                           printValues, nStreams);
   } else {
