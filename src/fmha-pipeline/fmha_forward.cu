@@ -179,7 +179,8 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
 
 // We assume V is NOT transposed in memory by default.
 // For now, if we enable V FP8, then we will also transpose V offline.
-#ifndef GEMM2FP8
+// #ifndef GEMM2FP8
+#if 0
   auto tileShapeV = make_shape(bN{}, bK{});
   auto smemLayoutAtomV = getSmemLayoutK<Mma2B, HEADDIM>();
   // For pipelined FMHA, the third dimension for SMEM V is the number of stages.
@@ -223,8 +224,7 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
           GMMA::Major::MN, GMMA::Major::K);
 #else
   auto tileShapeV = make_shape(bK{}, bN{});
-  auto smemLayoutAtomV = getSmemLayoutK<Mma2B, bN{}>();
-  //auto smemLayoutAtomV = GMMA::Layout_K_INTER_Atom<Mma2B>{};
+  auto smemLayoutAtomV = getSmemLayoutK<Mma2B, bN{}>(); //  ComposedLayout<Swizzle<3,4,3>, smem_ptr_flag, Layout<Shape<_8,_1024>,Stride<_1024,_1>>>;
   auto smemLayoutV = tile_to_shape(
       smemLayoutAtomV,
       make_shape(shape<0>(tileShapeV), shape<1>(tileShapeV), STAGES()));
@@ -235,10 +235,7 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
                             size<0>(ClusterShape{}));
 
   constexpr auto majorV = GMMA::Major::K;
-  // Don't care for this version.
   auto smemLayoutVt = smemLayoutV;
-  auto srcSmemLayoutAtomV = smemLayoutAtomV;
-  auto srcSmemLayoutV = smemLayoutV;
 #endif
 
   auto tileShapeO = make_shape(bM{}, bK{});
@@ -348,6 +345,7 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
                                decltype(smemLayoutV), decltype(smemLayoutO),
                                ClusterShape>));
   cfk::utils::set_smem_size(smem_size, kernel);
+  printf("smem = %d\n", smem_size);
 
   // Set the THREAD BLOCK (CTA) dimensions.
   // #threads in CTA = #threads in MMA (128 by default) + 128 (for WS).
@@ -743,6 +741,7 @@ int main(int argc, char const **argv) {
   // Though it's simple to also add e5m2_t.
   if (precType == 1) {
     #ifndef GEMM2FP8
+    std::cout << "using fp16."<< std::endl;
     if (kHeadSize == 64) {
       testFmhaForward<cutlass::half_t, 64>(seqLength, seqLength, numHeads,
                                            batchSize, iterations, refCheck,
@@ -768,6 +767,7 @@ int main(int argc, char const **argv) {
   // e4m3 for inference (forward pass), e5m2 for training (backward pass).
   else if (precType == 2) {
 #if 1
+    std::cout << "using FP8."<< std::endl;
     if (kHeadSize == 64) {
       testFmhaForward<cutlass::float_e4m3_t, 64>(
           seqLength, seqLength, numHeads, batchSize, iterations, refCheck,
@@ -780,7 +780,21 @@ int main(int argc, char const **argv) {
       testFmhaForward<cutlass::float_e4m3_t, 256>(
           seqLength, seqLength, numHeads, batchSize, iterations, refCheck,
           printValues, printDiffs, nStreams);
-    } else {
+    } else if (kHeadSize == 384) {
+      testFmhaForward<cutlass::float_e4m3_t, 384>(
+          seqLength, seqLength, numHeads, batchSize, iterations, refCheck,
+          printValues, printDiffs, nStreams);
+    } else if (kHeadSize == 512) {
+      testFmhaForward<cutlass::float_e4m3_t, 512>(
+          seqLength, seqLength, numHeads, batchSize, iterations, refCheck,
+          printValues, printDiffs, nStreams);
+    } 
+    // else if (kHeadSize == 576) {
+    //   testFmhaForward<cutlass::float_e4m3_t, 576>(
+    //       seqLength, seqLength, numHeads, batchSize, iterations, refCheck,
+    //       printValues, printDiffs, nStreams);
+    // } 
+    else {
       std::cout << "Unsupported head dim: " << kHeadSize << std::endl;
       exit(-1);
     }

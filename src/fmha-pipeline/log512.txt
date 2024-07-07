@@ -1,0 +1,161 @@
+using FP8.
+Using device 0: NVIDIA H800  (SM90, 132 SMs)
+M = 4096
+N = 4096
+K = 512
+QBLK = 128
+KBLK = 64
+L = 16 : 4 * 4
+gtensor         : ptr[8b](0x7fae04000000) o (4096,512,4,4):(2048,1,512,8388608)
+slayout         : (_128,(_128,_4)):(_128,(_1,_16384))
+cta_v_map       : (_128,_512):(_1@0,_1@1)
+inv_smem_layout : (_128,_128,_4):(_128,_1,_16384)
+sidx2gmode_full : (_128,_128,_4):(_1@1,_1@0,_128@1)
+smem_rank  : _2
+sidx2gmode : (_128,_128):(_1@1,_1@0)
+tile_gstride : (_128,_128):(1,2048)
+tma_gstride  : (_128,_128):(1,2048)
+gbasis       : (4096,512,4,4):(_1@0,_1@1,_1@2,_1@3)
+tile_gbasis  : (_128,_128):(_1@1,_1@0)
+tma_gbasis   : (_128,_128,_1,_1):(_1@1,_1@0,_1@2,_1@3)
+------------------------------ in TMA Desc ------------------------------: 
+ptr[8b](0x7fae04000000) o (4096,512,4,4):(2048,1,512,8388608)
+TMA Desc Addr:   0x7ffe14b87a00
+format         0
+dim            4
+gmem_address   0x7fae04000000
+globalDim      (512,4096,4,4,1)
+globalStrides  (1,2048,512,8388608,0)
+boxDim         (128,128,1,1,1)
+elementStrides (1,1,1,1,1)
+interleave     0
+swizzle        3
+l2Promotion    2
+oobFill        0
+num_bits_per_tma :  131072
+g_stride_bases   :  (_1@1,1@0,_1@2,_1@3)
+cta_tiler : (_128,_512)
+layout_v : (_128,_128):(_128,_1)
+layout_V : ((_128,_128,_4)):((_128,_1,_16384))
+layout_t : _1:_16384
+layout_T : _1:_0
+layout_TV : (_1,((_128,_128,_4))):(_0,((_128,_1,_16384)))
+gtensor         : ptr[8b](0x7fae06000000) o (4096,512,4,4):(2048,1,512,8388608)
+slayout         : (_64,(_128,_4)):(_128,(_1,_8192))
+cta_v_map       : (_64,_512):(_1@0,_1@1)
+inv_smem_layout : (_128,_64,_4):(_64,_1,_8192)
+sidx2gmode_full : (_128,_64,_4):(_1@1,_1@0,_128@1)
+smem_rank  : _2
+sidx2gmode : (_128,_64):(_1@1,_1@0)
+tile_gstride : (_128,_64):(1,2048)
+tma_gstride  : (_128,_64):(1,2048)
+gbasis       : (4096,512,4,4):(_1@0,_1@1,_1@2,_1@3)
+tile_gbasis  : (_128,_64):(_1@1,_1@0)
+tma_gbasis   : (_128,_64,_1,_1):(_1@1,_1@0,_1@2,_1@3)
+------------------------------ in TMA Desc ------------------------------: 
+ptr[8b](0x7fae06000000) o (4096,512,4,4):(2048,1,512,8388608)
+TMA Desc Addr:   0x7ffe14b87a80
+format         0
+dim            4
+gmem_address   0x7fae06000000
+globalDim      (512,4096,4,4,1)
+globalStrides  (1,2048,512,8388608,0)
+boxDim         (128,64,1,1,1)
+elementStrides (1,1,1,1,1)
+interleave     0
+swizzle        3
+l2Promotion    2
+oobFill        0
+num_bits_per_tma :  65536
+g_stride_bases   :  (_1@1,1@0,_1@2,_1@3)
+cta_tiler : (_64,_512)
+layout_v : (_128,_64):(_64,_1)
+layout_V : ((_128,_64,_4)):((_64,_1,_8192))
+layout_t : _1:_8192
+layout_T : _1:_0
+layout_TV : (_1,((_128,_64,_4))):(_0,((_64,_1,_8192)))
+gtensor         : ptr[8b](0x7fae1a000000) o (512,4096,4,4):(16384,1,4096,8388608)
+slayout         : (_512,_64):(_64,_1)
+cta_v_map       : (_512,_64):(_1@0,_1@1)
+inv_smem_layout : (_64,_512):(_512,_1)
+sidx2gmode_full : (_64,_512):(_1@1,_1@0)
+smem_rank  : _2
+sidx2gmode : (_64,_512):(_1@1,_1@0)
+tile_gstride : (_64,_512):(1,16384)
+tma_gstride  : (_64,_512):(1,16384)
+gbasis       : (512,4096,4,4):(_1@0,_1@1,_1@2,_1@3)
+tile_gbasis  : (_64,_512):(_1@1,_1@0)
+tma_gbasis   : (_64,_512,_1,_1):(_1@1,_1@0,_1@2,_1@3)
+------------------------------ in TMA Desc ------------------------------: 
+ptr[8b](0x7fae1a000000) o (512,4096,4,4):(16384,1,4096,8388608)
+TMA Desc Addr:   0x7ffe14b87e00
+format         0
+dim            4
+gmem_address   0x7fae1a000000
+globalDim      (4096,512,4,4,1)
+globalStrides  (1,16384,4096,8388608,0)
+boxDim         (64,512,1,1,1)
+elementStrides (1,1,1,1,1)
+interleave     0
+swizzle        2
+l2Promotion    2
+oobFill        0
+TMA Desc Addr:   0x7ffe14b87e00
+format         0
+dim            4
+gmem_address   0x7fae1a000000
+globalDim      (4096,512,4,4,1)
+globalStrides  (1,16384,4096,8388608,0)
+boxDim         (64,512,1,1,1)
+elementStrides (1,1,1,1,1)
+interleave     0
+swizzle        2
+l2Promotion    2
+oobFill        0
+Error: Failed to initialize the TMA descriptor 1
+num_bits_per_tma :  262144
+g_stride_bases   :  (_1@1,1@0,_1@2,_1@3)
+cta_tiler : (_512,_64)
+layout_v : (_64,_512):(_512,_1)
+layout_V : ((_64,_512)):((_512,_1))
+layout_t : _1:_32768
+layout_T : _1:_0
+layout_TV : (_1,((_64,_512))):(_0,((_512,_1)))
+gtensor         : ptr[16b](0x7fade2000000) o (4096,512,4,4):(2048,1,512,8388608)
+slayout         : (_128,(_64,_8)):(_64,(_1,_8192))
+cta_v_map       : (_128,_512):(_1@0,_1@1)
+inv_smem_layout : (_64,_128,_8):(_128,_1,_8192)
+sidx2gmode_full : (_64,_128,_8):(_1@1,_1@0,_64@1)
+smem_rank  : _2
+sidx2gmode : (_64,_128):(_1@1,_1@0)
+tile_gstride : (_64,_128):(1,2048)
+tma_gstride  : (_64,_128):(1,2048)
+gbasis       : (4096,512,4,4):(_1@0,_1@1,_1@2,_1@3)
+tile_gbasis  : (_64,_128):(_1@1,_1@0)
+tma_gbasis   : (_64,_128,_1,_1):(_1@1,_1@0,_1@2,_1@3)
+------------------------------ in TMA Desc ------------------------------: 
+ptr[16b](0x7fade2000000) o (4096,512,4,4):(2048,1,512,8388608)
+TMA Desc Addr:   0x7ffe14b87f80
+format         6
+dim            4
+gmem_address   0x7fade2000000
+globalDim      (512,4096,4,4,1)
+globalStrides  (2,4096,1024,16777216,0)
+boxDim         (64,128,1,1,1)
+elementStrides (1,1,1,1,1)
+interleave     0
+swizzle        3
+l2Promotion    2
+oobFill        0
+num_bits_per_tma :  131072
+g_stride_bases   :  (_1@1,1@0,_1@2,_1@3)
+cta_tiler : (_128,_512)
+layout_v : (_64,_128):(_128,_1)
+layout_V : ((_64,_128,_8)):((_128,_1,_8192))
+layout_t : _1:_8192
+layout_T : _1:_0
+layout_TV : (_1,((_64,_128,_8))):(_0,((_128,_1,_8192)))
+  Shared Memory Allocation Failed 
+ cudaFuncSetAttribute() returned error: invalid argument
+<fmha_forward.cu:579> cudaPeekAtLastError():
+    cudaErrorInvalidValue: invalid argument
