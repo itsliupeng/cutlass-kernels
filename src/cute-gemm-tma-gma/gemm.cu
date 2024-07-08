@@ -198,7 +198,7 @@ __global__ static void gemm_device(
   Tensor tCrB = thread_mma.make_fragment_B(tCsB); // (MMA,MMA_N,MMA_K,PIPE)
   // auto tCrC = partition_fragment_C(tiled_mma, take<0,2>(tile_shape_c)); //
   // (MMA,MMA_M,MMA_N)
-#if LP_DEBUG
+#ifdef LP_DEBUG
   if (thread0()) {
     print("tCsA  :  ");
     print(tCsA.data());
@@ -285,8 +285,8 @@ __global__ static void gemm_device(
   for (int stage = 0; stage < size<1>(tAgA); ++stage) {
     // Set the bytes transferred in this TMA transaction (may involve multiple
     // issues)
-    constexpr int kTmaTransactionBytes =
-        size(sA) * sizeof_bits_v<TA> / 8 + size(sB) * sizeof_bits_v<TB> / 8;
+    // constexpr int kTmaTransactionBytes =
+    //     size(sA) * sizeof_bits_v<TA> / 8 + size(sB) * sizeof_bits_v<TB> / 8;
 
     // template <typename SrcEngineA, typename SrcLayoutA, typename SrcEngineB,
     //       typename SrcLayoutB, typename DstEngineA, typename DstLayoutA,
@@ -302,13 +302,40 @@ __global__ static void gemm_device(
     // cfk::copy(tAgA(_, stage), tBgB(_, stage), tAsA(_, 0), tBsB(_, 0), tma_load_a, tma_load_b, tma_load_mbar[0], mcast_mask_a, mcast_mask_b);
 
     // cfk::copy(tAgA(_, stage), tAsA(_, 0), tma_load_a, tma_load_mbar[0]);
-    cfk::copy(tBgB(_, stage), tBsB(_, 0), tma_load_b, tma_load_mbar[1]);
+    // cfk::copy(tBgB(_, stage), tBsB(_, 0), tma_load_b, tma_load_mbar[1]);
 
     // __syncthreads();
     // copy(tma_load_a.with(tma_load_mbar[0]), tAgA(_, stage), tAsA(_, 0));
     // copy(tma_load_b.with(tma_load_mbar[1]), tBgB(_, stage), tBsB(_, 0));
     // cutlass::arch::fence_view_async_shared();
     // __syncthreads();
+
+    // __syncthreads();
+
+    int warp_idx = cutlass::canonical_warp_idx_sync();
+    int lane_predicate = cute::elect_one_sync();
+    if (warp_idx == 0 and lane_predicate) {
+      constexpr int AkTmaTransactionBytes = sizeof(ArrayEngine<TA, size(sA)>);
+      constexpr int BkTmaTransactionBytes = sizeof(ArrayEngine<TB, size(sB)>);
+      /// Initialize shared memory barrier
+      tma_load_mbar[0] = 0;
+      cute::initialize_barrier(tma_load_mbar[0], 1 /*numThreads*/);
+      cute::set_barrier_transaction_bytes(tma_load_mbar[0], AkTmaTransactionBytes);
+      copy(tma_load_a.with(tma_load_mbar[0]), tAgA(_, stage), tAsA(_, 0));
+
+
+      tma_load_mbar[1] = 0;
+      cute::initialize_barrier(tma_load_mbar[1], 1 /*numThreads*/);
+      cute::set_barrier_transaction_bytes(tma_load_mbar[1], BkTmaTransactionBytes);
+      copy(tma_load_b.with(tma_load_mbar[1]), tBgB(_, stage), tBsB(_, 0));
+    }
+    __syncthreads();
+    /// Wait on the shared memory barrier until the phase bit flips from kPhaseBit value
+    constexpr int kPhaseBit = 0;
+    cute::wait_barrier(tma_load_mbar[0], kPhaseBit);
+    constexpr int BkPhaseBit = 0;
+    cute::wait_barrier(tma_load_mbar[1], BkPhaseBit);
+
     cfk::gemm(tiled_mma, tCrA, tCrB, tCrC);
   }
 
@@ -485,7 +512,12 @@ void test_gemm(int m, int n, int k, int l) {
 
   double gflops = (2.0 * m * n * k * l) * 1e-9;
 
+#ifdef LP_DEBUG
   const int timing_iterations = 1;
+#else 
+  const int timing_iterations = 1;
+#endif
+
   GPU_Clock timer;
 
 #if 1
@@ -551,9 +583,11 @@ void test_gemm(int m, int n, int k, int l) {
 
   // Run once (and check)
   d_C = h_C;
+# ifndef LP_DEBUG
   // gemm(m, n, k, alpha, d_A.data().get(), m, d_B.data().get(), n, beta,
   //      d_C.data().get(), m, d_A_out.data().get(), d_B_out.data().get(), l);
   // CUTE_CHECK_LAST();
+#endif
   thrust::host_vector<TC> cute_result = d_C;
   thrust::host_vector<TA> h_A_out = d_A_out;
   thrust::host_vector<TB> h_B_out = d_B_out;
