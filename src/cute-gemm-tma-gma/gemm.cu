@@ -299,6 +299,7 @@ __global__ static void gemm_device(
     //     TiledCopy<AtomA, ArgsA...> const &tma_load_a,
     //     TiledCopy<AtomB, ArgsB...> const &tma_load_b, uint64_t &tma_load_mbar,
     //     uint16_t mcast_mask_a = 0, uint16_t mcast_mask_b = 0)
+    // cute::initialize_barrier(tma_load_mbar[0], 2 /*numThreads*/);
     // cfk::copy(tAgA(_, stage), tBgB(_, stage), tAsA(_, 0), tBsB(_, 0), tma_load_a, tma_load_b, tma_load_mbar[0], mcast_mask_a, mcast_mask_b);
 
     // cfk::copy(tAgA(_, stage), tAsA(_, 0), tma_load_a, tma_load_mbar[0]);
@@ -319,24 +320,25 @@ __global__ static void gemm_device(
       constexpr int BkTmaTransactionBytes = sizeof(ArrayEngine<TB, size(sB)>);
       /// Initialize shared memory barrier
       tma_load_mbar[0] = 0;
-      cute::initialize_barrier(tma_load_mbar[0], 1 /*numThreads*/);
+      cute::initialize_barrier(tma_load_mbar[0], 2 /*numThreads*/);
       cute::set_barrier_transaction_bytes(tma_load_mbar[0], AkTmaTransactionBytes);
       copy(tma_load_a.with(tma_load_mbar[0]), tAgA(_, stage), tAsA(_, 0));
 
 
-      tma_load_mbar[1] = 0;
-      cute::initialize_barrier(tma_load_mbar[1], 1 /*numThreads*/);
-      cute::set_barrier_transaction_bytes(tma_load_mbar[1], BkTmaTransactionBytes);
-      copy(tma_load_b.with(tma_load_mbar[1]), tBgB(_, stage), tBsB(_, 0));
+      // tma_load_mbar[1] = 0;
+      // cute::initialize_barrier(tma_load_mbar[1], 1 /*numThreads*/);
+      cute::set_barrier_transaction_bytes(tma_load_mbar[0], BkTmaTransactionBytes);
+      copy(tma_load_b.with(tma_load_mbar[0]), tBgB(_, stage), tBsB(_, 0));
     }
     __syncthreads();
-    /// Wait on the shared memory barrier until the phase bit flips from kPhaseBit value
-    constexpr int kPhaseBit = 0;
-    cute::wait_barrier(tma_load_mbar[0], kPhaseBit);
-    constexpr int BkPhaseBit = 0;
-    cute::wait_barrier(tma_load_mbar[1], BkPhaseBit);
+    // Wait on the shared memory barrier until the phase bit flips from kPhaseBit value
+    // constexpr int kPhaseBit = 0;
+    // cute::wait_barrier(tma_load_mbar[0], kPhaseBit);
+    // constexpr int BkPhaseBit = 0;
+    // cute::wait_barrier(tma_load_mbar[1], BkPhaseBit);
 
-    cfk::gemm(tiled_mma, tCrA, tCrB, tCrC);
+    // cfk::gemm(tiled_mma, tCrA, tCrB, tCrC);
+    cfk::gemm_ldbar(tiled_mma, tCrA, tCrB, tCrC, tma_load_mbar[0], 0);
   }
 
 #pragma unroll
