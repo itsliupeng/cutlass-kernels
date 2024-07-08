@@ -51,7 +51,7 @@ template <class ElementTypeA, class ElementTypeB, class SmemLayoutA,
 struct SharedStorage {
   cute::array_aligned<ElementTypeA, cute::cosize_v<SmemLayoutA>> smem_a;
   cute::array_aligned<ElementTypeB, cute::cosize_v<SmemLayoutB>> smem_b;
-  cute::uint64_t tma_load_mbar[1];
+  cute::uint64_t tma_load_mbar[2];
 };
 
 template <class TiledMma, class ClusterShape, class TA, class TiledCopyA,
@@ -301,11 +301,14 @@ __global__ static void gemm_device(
     //     uint16_t mcast_mask_a = 0, uint16_t mcast_mask_b = 0)
     // cfk::copy(tAgA(_, stage), tBgB(_, stage), tAsA(_, 0), tBsB(_, 0), tma_load_a, tma_load_b, tma_load_mbar[0], mcast_mask_a, mcast_mask_b);
 
-    // cfk::copy(tAgA(_, stage), tAsA(_, 0));
-    __syncthreads();
-    copy(tma_load_a.with(tma_load_mbar[0]), tAgA(_, stage), tAsA(_, 0));
-    cutlass::arch::fence_view_async_shared();
-    __syncthreads();
+    // cfk::copy(tAgA(_, stage), tAsA(_, 0), tma_load_a, tma_load_mbar[0]);
+    cfk::copy(tBgB(_, stage), tBsB(_, 0), tma_load_b, tma_load_mbar[1]);
+
+    // __syncthreads();
+    // copy(tma_load_a.with(tma_load_mbar[0]), tAgA(_, stage), tAsA(_, 0));
+    // copy(tma_load_b.with(tma_load_mbar[1]), tBgB(_, stage), tBsB(_, 0));
+    // cutlass::arch::fence_view_async_shared();
+    // __syncthreads();
     cfk::gemm(tiled_mma, tCrA, tCrB, tCrC);
   }
 
@@ -351,31 +354,27 @@ void gemm(int m, int n, int k, Alpha alpha, TA const *A, int ldA, TB const *B,
   auto tile_shape_a = make_shape(bM{}, bK{});
   auto smem_layout_a =
       tile_to_shape(GMMA::Layout_K_SW64_Atom<MmaA>{}, tile_shape_a);
-  Layout gmem_layout_a =
-      make_layout(make_shape(M, K, L), make_stride<uint64_t>(K, 1, M * K));
+  Layout gmem_layout_a = make_layout(make_shape(M, K, L), make_stride<uint64_t>(K, 1, M * K));
   Tensor gA = make_tensor(ptr_A, gmem_layout_a);
 #ifdef LP_DEBUG
   print("------------------------------------- tma_a -------------------------------------\n");
 #endif
-  auto tma_a =
-      make_tma_copy(SM90_TMA_LOAD{}, gA, smem_layout_a, tile_shape_a, Int<1>{});
-  auto tma_a_mcast = make_tma_copy(SM90_TMA_LOAD_MULTICAST{}, gA, smem_layout_a,
-                                   tile_shape_a, size<1>(ClusterShape{}));
+  auto tma_a = make_tma_copy(SM90_TMA_LOAD{}, gA, smem_layout_a, tile_shape_a, Int<1>{});
+  // auto tma_a_mcast = make_tma_copy(SM90_TMA_LOAD_MULTICAST{}, gA, smem_layout_a,
+  //                                  tile_shape_a, size<1>(ClusterShape{}));
 
   // row-major for B, but transpose, so col-major.
   auto tile_shape_b = make_shape(bN{}, bK{});
-  auto smem_layout_b =
-      tile_to_shape(GMMA::Layout_K_SW64_Atom<MmaB>{}, tile_shape_b);
+  auto smem_layout_b = tile_to_shape(GMMA::Layout_K_SW64_Atom<MmaB>{}, tile_shape_b);
   Layout gmem_layout_b =
       make_layout(make_shape(N, K, L), make_stride<uint64_t>(K, 1, N * K));
   Tensor gB = make_tensor(ptr_B, gmem_layout_b);
 #ifdef LP_DEBUG
   print("------------------------------------- tma_b -------------------------------------\n");
 #endif
-  auto tma_b =
-      make_tma_copy(SM90_TMA_LOAD{}, gB, smem_layout_b, tile_shape_b, Int<1>{});
-  auto tma_b_mcast = make_tma_copy(SM90_TMA_LOAD_MULTICAST{}, gB, smem_layout_b,
-                                   tile_shape_b, size<0>(ClusterShape{}));
+  auto tma_b = make_tma_copy(SM90_TMA_LOAD{}, gB, smem_layout_b, tile_shape_b, Int<1>{});
+  // auto tma_b_mcast = make_tma_copy(SM90_TMA_LOAD_MULTICAST{}, gB, smem_layout_b,
+  //                                  tile_shape_b, size<0>(ClusterShape{}));
 
   // col-major for C.
   auto tile_shape_c = make_shape(bM{}, bN{});
@@ -406,6 +405,9 @@ void gemm(int m, int n, int k, Alpha alpha, TA const *A, int ldA, TB const *B,
         decltype(tile_shape_b), decltype(gmem_layout_b),
         decltype(smem_layout_b), TC, decltype(tile_shape_c),
         decltype(gmem_layout_c)>;
+
+    printf("smem_size = %d\n", smem_size);
+    print("cta size: "); print(size(TiledMma{})); print("\n");
     cfk::utils::set_smem_size(smem_size, kernel);
 
     dim3 block_dims(size(TiledMma{}));
@@ -422,29 +424,29 @@ void gemm(int m, int n, int k, Alpha alpha, TA const *A, int ldA, TB const *B,
         smem_layout_a, ptr_B, ptr_B_out, tma_b, tile_shape_b, gmem_layout_b,
         smem_layout_b, C, tile_shape_c, gmem_layout_c);
   } else {
-    void const *kernel = (void const *)
-        gemm_device<TiledMma, ClusterShape, MmaA, decltype(tma_a_mcast),
-                    decltype(tile_shape_a), decltype(gmem_layout_a),
-                    decltype(smem_layout_a), MmaB, decltype(tma_b_mcast),
-                    decltype(tile_shape_b), decltype(gmem_layout_b),
-                    decltype(smem_layout_b), TC, decltype(tile_shape_c),
-                    decltype(gmem_layout_c)>;
-    cfk::utils::set_smem_size(smem_size, kernel);
+    // void const *kernel = (void const *)
+    //     gemm_device<TiledMma, ClusterShape, MmaA, decltype(tma_a_mcast),
+    //                 decltype(tile_shape_a), decltype(gmem_layout_a),
+    //                 decltype(smem_layout_a), MmaB, decltype(tma_b_mcast),
+    //                 decltype(tile_shape_b), decltype(gmem_layout_b),
+    //                 decltype(smem_layout_b), TC, decltype(tile_shape_c),
+    //                 decltype(gmem_layout_c)>;
+    // cfk::utils::set_smem_size(smem_size, kernel);
 
-    dim3 block_dims(size(TiledMma{}));
-    dim3 grid_dims(ceil_div(size(M), size(bM{})), ceil_div(size(N), size(bN{})),
-                   L);
-    dim3 cluster_dims(cute::size<0>(ClusterShape{}),
-                      cute::size<1>(ClusterShape{}),
-                      cute::size<2>(ClusterShape{}));
-    cutlass::ClusterLaunchParams params{grid_dims, block_dims, cluster_dims,
-                                        smem_size};
+    // dim3 block_dims(size(TiledMma{}));
+    // dim3 grid_dims(ceil_div(size(M), size(bM{})), ceil_div(size(N), size(bN{})),
+    //                L);
+    // dim3 cluster_dims(cute::size<0>(ClusterShape{}),
+    //                   cute::size<1>(ClusterShape{}),
+    //                   cute::size<2>(ClusterShape{}));
+    // cutlass::ClusterLaunchParams params{grid_dims, block_dims, cluster_dims,
+    //                                     smem_size};
 
-    cutlass::Status status = cutlass::launch_kernel_on_cluster(
-        params, kernel, ptr_A, ptr_A_out, tma_a_mcast, tile_shape_a,
-        gmem_layout_a, smem_layout_a, ptr_B, ptr_B_out, tma_b_mcast,
-        tile_shape_b, gmem_layout_b, smem_layout_b, C, tile_shape_c,
-        gmem_layout_c);
+    // cutlass::Status status = cutlass::launch_kernel_on_cluster(
+    //     params, kernel, ptr_A, ptr_A_out, tma_a_mcast, tile_shape_a,
+    //     gmem_layout_a, smem_layout_a, ptr_B, ptr_B_out, tma_b_mcast,
+    //     tile_shape_b, gmem_layout_b, smem_layout_b, C, tile_shape_c,
+    //     gmem_layout_c);
   }
 }
 
