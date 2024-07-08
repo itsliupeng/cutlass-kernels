@@ -95,14 +95,9 @@ __global__ static void gemm_device(
   auto blk_coord_a =
       make_coord(uint64_t(blockIdx.x), _, uint64_t(blockIdx.z)); // (m,k,l)
 
-  constexpr int R = rank_v<TileShapeA>;
   Tensor gA =
       local_tile(mA, tile_shape_a,
                  blk_coord_a); // (CTA_TILE_M,CTA_TILE_N,...REST_M,REST_N,...)
-  Tensor gA_out =
-      local_tile(mA_out, tile_shape_a,
-                 blk_coord_a); // (CTA_TILE_M,CTA_TILE_N,...REST_M,REST_N,...)
-
   //
   // Prepare the TMA_LOAD for A
   //
@@ -112,7 +107,7 @@ __global__ static void gemm_device(
   Tensor tAgA_x = cta_tma_a.partition_S(gA); // (TMA,TMA_M,TMA_N,REST_M,REST_N)
   Tensor tAsA_x = cta_tma_a.partition_D(sA); // (TMA,TMA_M,TMA_N)
 
-#if 0 
+#ifdef LP_DEBUG
   if (thread0()) {
     print(tma_load_a);
     print("TILE  :  "); print(tile_shape_a); print("\n");
@@ -134,15 +129,10 @@ __global__ static void gemm_device(
   Tensor tAsA = group_modes<1, rank(tAsA_x)>(tAsA_x); // (TMA,REST)
   static_assert(size<1>(tAsA) == 1);
 
-  // OUTPUT: Group the CTA_TILE_X modes and REST_X modes for output
-  Tensor gA_out_collapsed = group_modes<0, R>(
-      group_modes<R, rank(gA_out)>(gA_out)); // (CTA_TILE, REST)
-
-#if 0 
+#ifdef LP_DEBUG
   if (thread0()) {
     print("tAgA  :  "); print(tAgA.data()); print(" o "); print(tAgA.layout()); print("\n");
     print("tAsA  :  "); print(tAsA.data()); print(" o "); print(tAsA.layout()); print("\n");
-    print("gA_out_collapsed  :  "); print(gA_out_collapsed.data()); print(" o "); print(gA_out_collapsed.layout()); print("\n");
   }
 #endif
   // Construct SMEM tensor for B
@@ -152,16 +142,11 @@ __global__ static void gemm_device(
   // TMA requires special handling of strides to deal with coord codomain
   // mapping Represent the full tensors -- get these from TMA
   Tensor mB = tma_load_b.get_tma_tensor(shape(gmem_layout_b));
-  Tensor mB_out = make_tensor(make_gmem_ptr(B_out), gmem_layout_b);
   auto blk_coord_b =
       make_coord(uint64_t(blockIdx.y), _, uint64_t(blockIdx.z)); // (n, k, l)
 
-  constexpr int RB = rank_v<TileShapeB>;
   Tensor gB =
       local_tile(mB, tile_shape_b,
-                 blk_coord_b); // (CTA_TILE_M,CTA_TILE_N,...REST_M,REST_N,...)
-  Tensor gB_out =
-      local_tile(mB_out, tile_shape_b,
                  blk_coord_b); // (CTA_TILE_M,CTA_TILE_N,...REST_M,REST_N,...)
 
   //
@@ -173,7 +158,7 @@ __global__ static void gemm_device(
   Tensor tBgB_x = cta_tma_b.partition_S(gB); // (TMA,TMA_M,TMA_N,REST_M,REST_N)
   Tensor tBsB_x = cta_tma_b.partition_D(sB); // (TMA,TMA_M,TMA_N)
 
-#if 0 
+#if LP_DEBUG
   if (thread0()) {
     print(tma_load_a);
     print("TILE  :  "); print(tile_shape_a); print("\n");
@@ -195,15 +180,10 @@ __global__ static void gemm_device(
   Tensor tBsB = group_modes<1, rank(tBsB_x)>(tBsB_x); // (TMA,REST)
   static_assert(size<1>(tBsB) == 1);
 
-  // OUTPUT: Group the CTA_TILE_X modes and REST_X modes for output
-  Tensor gB_out_collapsed = group_modes<0, RB>(
-      group_modes<RB, rank(gB_out)>(gB_out)); // (CTA_TILE, REST)
-
-#if 0
+#if LP_DEBUG
   if (thread0()) {
     print("tBgB  :  "); print(tBgB.data()); print(" o "); print(tBgB.layout()); print("\n");
     print("tBsB  :  "); print(tBsB.data()); print(" o "); print(tBsB.layout()); print("\n");
-    print("gB_out_collapsed  :  "); print(gB_out_collapsed.data()); print(" o "); print(gB_out_collapsed.layout()); print("\n");
   }
 #endif
 
@@ -218,7 +198,7 @@ __global__ static void gemm_device(
   Tensor tCrB = thread_mma.make_fragment_B(tCsB); // (MMA,MMA_N,MMA_K,PIPE)
   // auto tCrC = partition_fragment_C(tiled_mma, take<0,2>(tile_shape_c)); //
   // (MMA,MMA_M,MMA_N)
-#if 0
+#if LP_DEBUG
   if (thread0()) {
     print("tCsA  :  ");
     print(tCsA.data());
@@ -258,7 +238,7 @@ __global__ static void gemm_device(
   Tensor tCgC = thread_mma.partition_C(gC);
   auto tCrC = partition_fragment_C(tiled_mma, tile_shape_c);
 
-#if 0
+#ifdef LP_DEBUG
   if (thread0()) {
     print("tCgC  :  ");
     print(tCgC.data());
@@ -308,21 +288,25 @@ __global__ static void gemm_device(
     constexpr int kTmaTransactionBytes =
         size(sA) * sizeof_bits_v<TA> / 8 + size(sB) * sizeof_bits_v<TB> / 8;
 
-    cfk::copy(tAgA(_, stage), tBgB(_, stage), tAsA(_, 0), tBsB(_, 0),
-              tma_load_a, tma_load_b, tma_load_mbar, mcast_mask_a,
-              mcast_mask_b);
-    cfk::gemm(tiled_mma, tCrA, tCrB, tCrC);
+    // template <typename SrcEngineA, typename SrcLayoutA, typename SrcEngineB,
+    //       typename SrcLayoutB, typename DstEngineA, typename DstLayoutA,
+    //       typename DstEngineB, typename DstLayoutB, typename AtomA,
+    //       class... ArgsA, typename AtomB, class... ArgsB>
+    // __device__ void
+    // copy(Tensor<SrcEngineA, SrcLayoutA> const &gA,
+    //     Tensor<SrcEngineB, SrcLayoutB> const &gB,
+    //     Tensor<DstEngineA, DstLayoutA> &&sA, Tensor<DstEngineB, DstLayoutB> &&sB,
+    //     TiledCopy<AtomA, ArgsA...> const &tma_load_a,
+    //     TiledCopy<AtomB, ArgsB...> const &tma_load_b, uint64_t &tma_load_mbar,
+    //     uint16_t mcast_mask_a = 0, uint16_t mcast_mask_b = 0)
+    // cfk::copy(tAgA(_, stage), tBgB(_, stage), tAsA(_, 0), tBsB(_, 0), tma_load_a, tma_load_b, tma_load_mbar[0], mcast_mask_a, mcast_mask_b);
 
-#ifdef COPYOUTAB
-    for (int i = threadIdx.x; i < size(sA); i += blockDim.x) {
-      gA_out_collapsed(i, stage) = sA(i);
-    }
+    // cfk::copy(tAgA(_, stage), tAsA(_, 0));
     __syncthreads();
-    for (int i = threadIdx.x; i < size(sB); i += blockDim.x) {
-      gB_out_collapsed(i, stage) = sB(i);
-    }
+    copy(tma_load_a.with(tma_load_mbar[0]), tAgA(_, stage), tAsA(_, 0));
+    cutlass::arch::fence_view_async_shared();
     __syncthreads();
-#endif
+    cfk::gemm(tiled_mma, tCrA, tCrB, tCrC);
   }
 
 #pragma unroll
@@ -352,6 +336,10 @@ void gemm(int m, int n, int k, Alpha alpha, TA const *A, int ldA, TB const *B,
   using bK = cute::conditional_t<cute::is_same_v<TA, cutlass::half_t>, Int<64>,
                                  Int<32>>;
 
+  // printf("bM %d, bN %d, bK %d\n", bM{}, bN{}, bK{});
+  // print(bM{}); print("\n");
+  // print(bN{}); print("\n");
+  // print(bK{}); print("\n");
   using MmaA = cute::conditional_t<cute::is_same_v<TA, float>, tfloat32_t, TA>;
   using MmaB = cute::conditional_t<cute::is_same_v<TB, float>, tfloat32_t, TB>;
 
@@ -366,6 +354,9 @@ void gemm(int m, int n, int k, Alpha alpha, TA const *A, int ldA, TB const *B,
   Layout gmem_layout_a =
       make_layout(make_shape(M, K, L), make_stride<uint64_t>(K, 1, M * K));
   Tensor gA = make_tensor(ptr_A, gmem_layout_a);
+#ifdef LP_DEBUG
+  print("------------------------------------- tma_a -------------------------------------\n");
+#endif
   auto tma_a =
       make_tma_copy(SM90_TMA_LOAD{}, gA, smem_layout_a, tile_shape_a, Int<1>{});
   auto tma_a_mcast = make_tma_copy(SM90_TMA_LOAD_MULTICAST{}, gA, smem_layout_a,
@@ -378,6 +369,9 @@ void gemm(int m, int n, int k, Alpha alpha, TA const *A, int ldA, TB const *B,
   Layout gmem_layout_b =
       make_layout(make_shape(N, K, L), make_stride<uint64_t>(K, 1, N * K));
   Tensor gB = make_tensor(ptr_B, gmem_layout_b);
+#ifdef LP_DEBUG
+  print("------------------------------------- tma_b -------------------------------------\n");
+#endif
   auto tma_b =
       make_tma_copy(SM90_TMA_LOAD{}, gB, smem_layout_b, tile_shape_b, Int<1>{});
   auto tma_b_mcast = make_tma_copy(SM90_TMA_LOAD_MULTICAST{}, gB, smem_layout_b,
@@ -397,23 +391,15 @@ void gemm(int m, int n, int k, Alpha alpha, TA const *A, int ldA, TB const *B,
       cute::GMMA::ss_op_selector<MmaA, MmaB, TC, Shape<bM, bN, bK>>(),
       Layout<Shape<_1, _1, _1>>()));
 
-#if 0
+#ifdef LP_DEBUG
   print(tma_a);
   print(tile_shape_a);
   print(smem_layout_a);
   // print (TiledMma{});
 #endif
 
-  int cuda_grid_x;
-  int cuda_grid_y;
-  int cuda_grid_z;
-  cudaDeviceGetAttribute(&cuda_grid_x, cudaDevAttrMaxGridDimX, 0);
-  cudaDeviceGetAttribute(&cuda_grid_y, cudaDevAttrMaxGridDimY, 0);
-  cudaDeviceGetAttribute(&cuda_grid_z, cudaDevAttrMaxGridDimZ, 0);
-  // std::cout << cuda_grid_x << " " << cuda_grid_y << " " << cuda_grid_z <<
-  // std::endl;
-
   if (size(ClusterShape{}) == 1) {
+    print("cluster shape is 1\n");
     void const *kernel = (void const *)gemm_device<
         TiledMma, ClusterShape, MmaA, decltype(tma_a), decltype(tile_shape_a),
         decltype(gmem_layout_a), decltype(smem_layout_a), MmaB, decltype(tma_b),
@@ -497,7 +483,7 @@ void test_gemm(int m, int n, int k, int l) {
 
   double gflops = (2.0 * m * n * k * l) * 1e-9;
 
-  const int timing_iterations = 1000;
+  const int timing_iterations = 1;
   GPU_Clock timer;
 
 #if 1
@@ -563,29 +549,12 @@ void test_gemm(int m, int n, int k, int l) {
 
   // Run once (and check)
   d_C = h_C;
-  gemm(m, n, k, alpha, d_A.data().get(), m, d_B.data().get(), n, beta,
-       d_C.data().get(), m, d_A_out.data().get(), d_B_out.data().get(), l);
-  CUTE_CHECK_LAST();
+  // gemm(m, n, k, alpha, d_A.data().get(), m, d_B.data().get(), n, beta,
+  //      d_C.data().get(), m, d_A_out.data().get(), d_B_out.data().get(), l);
+  // CUTE_CHECK_LAST();
   thrust::host_vector<TC> cute_result = d_C;
   thrust::host_vector<TA> h_A_out = d_A_out;
   thrust::host_vector<TB> h_B_out = d_B_out;
-
-#ifdef COPYOUTAB
-  for (int j = 0; j < m * k; ++j) {
-    if (h_A[j] != h_A_out[j]) {
-      std::cout << "failed " << h_A[j] << ", " << h_A_out[j] << std::endl;
-      break;
-    }
-    // std::cout << h_A[j] << " " << h_A_out[j] << std::endl;
-  }
-  for (int j = 0; j < n * k; ++j) {
-    if (h_B[j] != h_B_out[j]) {
-      std::cout << "failed " << std::endl;
-      break;
-    }
-    // std::cout << h_A[j] << " " << h_A_out[j] << std::endl;
-  }
-#endif
 
 #if 1
   // Timing iterations
@@ -654,7 +623,7 @@ void test_gemm(int m, int n, int k, int l) {
 }
 
 int main(int argc, char **argv) {
-  int type = 1; // 1 means tf32, 2 means half
+  int type = 3; // 1 means tf32, 3 means half
   if (argc >= 2)
     sscanf(argv[1], "%d", &type);
 
@@ -674,6 +643,7 @@ int main(int argc, char **argv) {
   if (argc >= 6)
     sscanf(argv[5], "%d", &l);
 
+  printf("type = %d\n", type);
   if (type == 1) {
     test_gemm<float, float, float, float>(m, n, k, l);
   } else if (type == 2) {
