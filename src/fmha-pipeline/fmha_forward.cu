@@ -478,7 +478,7 @@ void testFmhaForward(int m, int n, int numHeads, int batchSize, int iterations,
 
   cutlass::Distribution::Kind initQ;
   cutlass::Distribution::Kind initK;
-  cutlass::Distribution::Kind initV;
+  // cutlass::Distribution::Kind initV;
   if (refCheck) {
     // Change to Uniform for easier debugging
     // initQ = cutlass::Distribution::Uniform;
@@ -486,16 +486,17 @@ void testFmhaForward(int m, int n, int numHeads, int batchSize, int iterations,
     // initV = cutlass::Distribution::Uniform;
     initQ = cutlass::Distribution::Gaussian;
     initK = cutlass::Distribution::Gaussian;
-    initV = cutlass::Distribution::Gaussian;
+    // initV = cutlass::Distribution::Gaussian;
   } else {
     initQ = cutlass::Distribution::Gaussian;
     initK = cutlass::Distribution::Gaussian;
-    initV = cutlass::Distribution::Gaussian;
+    // initV = cutlass::Distribution::Gaussian;
   }
 
   cfk::initialize_rand(devQ.data().get(), devQ.size(), initQ, seed + 1);
   cfk::initialize_rand(devK.data().get(), devK.size(), initK, seed + 2);
-  cfk::initialize_rand(devV.data().get(), devV.size(), initV, seed + 3);
+  // cfk::initialize_rand(devV.data().get(), devV.size(), initV, seed + 3);
+  devV = devK; // kv shared
   cfk::initialize_const(devS.data().get(), devS.size(), PrecType(-1));
   cfk::initialize_const(devD.data().get(), devD.size(), OutputType(-1));
 
