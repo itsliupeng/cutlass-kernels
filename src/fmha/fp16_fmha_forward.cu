@@ -193,15 +193,6 @@ fmhaForward(PrecType const *Q, CUTE_GRID_CONSTANT TiledCopyQ const tmaLoadQ,
   auto blkCoordQ = make_coord(blockIdxX, 0, blockIdxH, blockIdxB); // 
   Tensor gQ = local_tile(mQ, tileShapeQ, blkCoordQ);
 
-#ifdef LP_DEBUG
-  if (thread0()) {
-    print("mQ: "); print(mQ); print("\n"); // mQ: ArithTuple(_0,_0,_0,_0) o (1024,256,8,16):(_1@1,1@0,_1@2,_1@3) #[S, H, N, B]
-    print("tileShapeQ: "); print(tileShapeQ); print("\n"); // mQ: ArithTuple(_0,_0,_0,_0) o (1024,256,8,16):(_1@1,1@0,_1@2,_1@3) #[S, H, N, B]
-    print("blkCoordQ: "); print(blkCoordQ); print("\n"); // blkCoordQ: (0,0,0,0)
-    print("gQ: "); print(gQ); print("\n"); // gQ: ArithTuple(0,0,0,0) o (_64,_256):(_1@1,1@0)
-  }  
-#endif
-
   // Partition the copying of source tiles for Q among threads.
   Tensor tQgQX = cta_tmaQ.partition_S(gQ);
   // Group the REST_X modes and the TMA_X modes to easily iterate through the
@@ -233,21 +224,13 @@ fmhaForward(PrecType const *Q, CUTE_GRID_CONSTANT TiledCopyQ const tmaLoadQ,
   // Allocate "fragments/descriptors"
   // for second matmul.
   // Note: S becomes P.
-  Tensor tOrV = threadMma1.partition_fragment_B(sVt);
+  Tensor tOrV = threadMma1.partition_fragment_B(sVt); // [K, N]
   Tensor tOrO = partition_fragment_C(tiledMma1, tileShapeO);
   clear(tOrO);
 
-// Use this flag to store result of GEMM-I to SMEM. GEMM-II
-// will also read from SMEM. By default, this flag is disabled.
-#ifdef SINSMEM
-  Tensor tSsS = threadMma0.partition_C(sS);
-  cute::fill(tSsS, PrecType(0.0));
-  Tensor tOrP = threadMma1.partition_fragment_A(sS);
-#else
-  Tensor tOrS = threadMma1.partition_fragment_A(sS);
+  Tensor tOrS = threadMma1.partition_fragment_A(sS); // [M, N]
   auto tOrPLayout = ReshapeTStoTP()(tSrS, tOrS);
   auto tOrP = make_tensor(tSrS.data(), tOrPLayout);
-#endif
 
   // Allocate space for per-thread rowMax and rowSum in rmem.
   Tensor rowMax = make_tensor<AccumType>(Shape<Int<2 * size<1>(tSrS)>>{});
@@ -286,6 +269,42 @@ fmhaForward(PrecType const *Q, CUTE_GRID_CONSTANT TiledCopyQ const tmaLoadQ,
   // Initialize phase for barriers 0 and 1.
   int phase = 0;
 
+// #ifdef LP_DEBUG
+  if (thread0()) {
+    print("mQ: "); print(mQ); print("\n"); // mQ: ArithTuple(_0,_0,_0,_0) o (1024,256,8,16):(_1@1,1@0,_1@2,_1@3) #[S, H, N, B]
+    print("tileShapeQ: "); print(tileShapeQ); print("\n"); // (_64,_256)
+    print("blkCoordQ: "); print(blkCoordQ); print("\n"); // blkCoordQ: (0,0,0,0)
+    print("gQ: "); print(gQ); print("\n"); // gQ: ArithTuple(0,0,0,0) o (_64,_256):(_1@1,1@0)
+    print("tQgQ: "); print(tQgQ); print("\n"); // (((_64,_64),_4),(_1,_1)):(((1@0,_1@1),64@0),(_0,_0))
+    print("tQsQ: "); print(tQsQ); print("\n"); // Sw<3,4,3>_smem_ptr[16b](0x7f3e00000400) o (((_64,_64),_4),(_1,_1)):(((_1,_64),_4096),(_0,_0))
+    // K
+    print("tKsK: "); print(tKsK); print("\n");
+    print("tKgK: "); print(tKgK); print("\n");
+
+    // mma0
+    print("sQ: "); print(sQ); print("\n"); // Sw<3,4,3>_smem_ptr[16b](0x7f1500000400) o (_64,(_64,_4)):(_64,(_1,_4096))
+    print("sK: "); print(sK); print("\n"); // Sw<3,4,3>_smem_ptr[16b](0x7f1500008400) o (_64,(_64,_4)):(_64,(_1,_4096))
+    print("tSrQ: "); print(tSrQ); print("\n"); // GMMA::DescriptorIterator o (_1,_1,(_4,_4)):(_0,_0,(_2,_512))
+    print("tSrK: "); print(tSrK); print("\n"); // GMMA::DescriptorIterator o (_1,_1,(_4,_4)):(_0,_0,(_2,_512))
+    print("tSrS: "); print(tSrS); print("\n"); // ptr[32b](0x7f1421fffc40) o ((_2,_2,_8),_1,_1):((_1,_2,_4),_0,_0)
+
+    // mma1 cfk::gemm_ldbar(tiledMma1, convert_type<PrecType, AccumType>(tOrP), tOrV, tOrO, tma_load_mbar[1], phase);
+    print("sS: "); print(sS); print("\n"); // Sw<3,4,3>_smem_ptr[16b](0x7fbb00010400) o (_64,_64):(_64,_1)
+    print("sV: "); print(sV); print("\n"); // Sw<3,4,3>_smem_ptr[16b](0x7fbb00010400) o (_64,(_64,_4)):(_64,(_1,_4096))
+    print("sVt: "); print(sVt); print("\n"); // Sw<3,4,3>_smem_ptr[16b](0x7fbb00010400) o ((_64,_4),_64):((_1,_4096),_64)
+    print("tOrP: "); print(tOrP); print("\n"); // ptr[32b](0x7fbaedfffa40) o ((_2,_2,_2),_1,_4):((_1,_2,_4),_0,_8)
+    print("tOrV: "); print(tOrV); print("\n"); // GMMA::DescriptorIterator o (_1,_1,_4):(_0,_0,_128)
+    print("tOrO: "); print(tOrO); print("\n"); // ptr[32b](0x7fbaedfffac0) o ((_2,_2,_32),_1,_1):((_1,_2,_4),_0,_0)
+
+
+    print("rowMax: "); print(rowMax); print("\n"); // (_2):(_1)
+    print("rowSum: "); print(rowSum); print("\n"); // (_2):(_1)
+
+    print("nTilesOfK: "); print(nTilesOfK); print("\n"); // 1024 / 64 = 16
+
+  }  
+// #endif
+
 #pragma unroll
   for (uint64_t blockIdxY = 0; blockIdxY < nTilesOfK; ++blockIdxY) {
 
@@ -294,8 +313,6 @@ fmhaForward(PrecType const *Q, CUTE_GRID_CONSTANT TiledCopyQ const tmaLoadQ,
     Tensor gV = local_tile(mV, tileShapeV, blkCoordV);
     Tensor tVgVX = cta_tmaV.partition_S(gV);
     Tensor tVgV = group_modes<1, rank(tVgVX)>(tVgVX);
-    // assert(size<1>(tVgV) == size<2>(gV));
-    // assert(size<1>(tVgV) == 1);
 
     // Copy current tile of V from GMEM to SMEM.
     cfk::syncCluster<ClusterShape>();
@@ -305,15 +322,6 @@ fmhaForward(PrecType const *Q, CUTE_GRID_CONSTANT TiledCopyQ const tmaLoadQ,
     // Issue GEMM-I.
     cfk::gemm_ldbar(tiledMma0, tSrQ, tSrK, tSrS, tma_load_mbar[0], phase);
 
-// Required for verification ONLY.
-#ifdef COPYOUTMM0
-    Tensor mS = make_tensor(make_gmem_ptr(S), gmemLayoutS);
-    auto blkCoordS = make_coord(blockIdxX, blockIdxY, blockIdxH, blockIdxB);
-    Tensor gS = local_tile(mS, tileShapeS, blkCoordS);
-    Tensor tSgS = threadMma0.partition_C(gS);
-    copy(tSrS, tSgS);
-#endif
-
     // Copy next tile of K from GMEM to SMEM.
     if (blockIdxY != (nTilesOfK - 1)) {
       auto blkCoordK = make_coord(blockIdxY + 1, 0, blockIdxH, blockIdxB);
@@ -322,31 +330,22 @@ fmhaForward(PrecType const *Q, CUTE_GRID_CONSTANT TiledCopyQ const tmaLoadQ,
       Tensor tKgKX = cta_tmak.partition_S(gK);
       Tensor tKgK = group_modes<1, rank(tKgKX)>(tKgKX);
       cfk::syncCluster<ClusterShape>();
-      cfk::copy(tKgK(_, 0), tKsK(_, 0), tmaLoadK, tma_load_mbar[0],
-                mcast_mask_a);
+      cfk::copy(tKgK(_, 0), tKsK(_, 0), tmaLoadK, tma_load_mbar[0], mcast_mask_a);
     }
 
     if (blockIdxY == 0) { // Compute Online Softmax and NO Output Rescaling.
-      onlineSoftmaxAndRescale<true, AccumType>(rowMax, rowSum, tSrS, tOrO,
-                                               scale);
+      onlineSoftmaxAndRescale<true, AccumType>(rowMax, rowSum, tSrS, tOrO, scale);
     } else { // Compute Online Softmax and Output Rescaling.
-      onlineSoftmaxAndRescale<false, AccumType>(rowMax, rowSum, tSrS, tOrO,
-                                                scale);
+      onlineSoftmaxAndRescale<false, AccumType>(rowMax, rowSum, tSrS, tOrO, scale);
     }
     warpgroup_fence_operand(tSrS);
 
-#ifdef SINSMEM
-    // ISSUE GEMM-II with Operand A from SMEM.
-    // Copy OperandA from RMEM to SMEM before issuing.
-    cfk::copy(tSrS, tSsS);
-    cfk::gemm_ldbar(tiledMma1, tOrP, tOrV, tOrO, tma_load_mbar[1], phase);
-#else
     // ISSUE GEMM-II with Operand A from RMEM.
     // Convert Operand A From AccumType [=float] to PrecType [=half_t] before
     // issuing.
     cfk::gemm_ldbar(tiledMma1, convert_type<PrecType, AccumType>(tOrP), tOrV,
                     tOrO, tma_load_mbar[1], phase);
-#endif
+
     // Flip phase for barrier.
     phase = (phase + 1) % 2;
   }
