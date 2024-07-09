@@ -818,6 +818,10 @@ int main(int argc, char const **argv) {
     testFmhaForward<cutlass::half_t, 256>(seqLength, seqLength, numHeads,
                                           batchSize, iterations, refCheck,
                                           printValues, nStreams);
+  } else if (kHeadSize == 512) {
+    testFmhaForward<cutlass::half_t, 512>(seqLength, seqLength, numHeads,
+                                          batchSize, iterations, refCheck,
+                                          printValues, nStreams);
   } else {
     std::cout << "Unsupported head dim: " << kHeadSize << std::endl;
     exit(-1);
