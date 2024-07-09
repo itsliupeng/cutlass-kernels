@@ -153,8 +153,7 @@ fmhaForward(PrecType const *Q, CUTE_GRID_CONSTANT TiledCopyQ const tmaLoadQ,
   Tensor sV =
       make_tensor(make_smem_ptr(shared_storage.smem_v.data()), smemLayoutV);
   // Tensor for V Transpose; used in GEMM-II.
-  Tensor sVt =
-      make_tensor(make_smem_ptr(shared_storage.smem_v.data()), smemLayoutVt);
+  Tensor sVt = make_tensor(make_smem_ptr(shared_storage.smem_v.data()), smemLayoutVt);
 
   // Get the full un-partitioned tensors.
   // TMA tensors are special tensors.
@@ -224,13 +223,15 @@ fmhaForward(PrecType const *Q, CUTE_GRID_CONSTANT TiledCopyQ const tmaLoadQ,
   // Allocate "fragments/descriptors"
   // for second matmul.
   // Note: S becomes P.
-  Tensor tOrV = threadMma1.partition_fragment_B(sVt); // [K, N]
-  Tensor tOrO = partition_fragment_C(tiledMma1, tileShapeO);
-  clear(tOrO);
+
 
   Tensor tOrS = threadMma1.partition_fragment_A(sS); // [M, N]
   auto tOrPLayout = ReshapeTStoTP()(tSrS, tOrS);
   auto tOrP = make_tensor(tSrS.data(), tOrPLayout);
+  // lp: sVt flattern then stride to K_major
+  Tensor tOrV = threadMma1.partition_fragment_B(sVt); // [K, N], MN_major, how to K_major
+  Tensor tOrO = partition_fragment_C(tiledMma1, tileShapeO);
+  clear(tOrO);
 
   // Allocate space for per-thread rowMax and rowSum in rmem.
   Tensor rowMax = make_tensor<AccumType>(Shape<Int<2 * size<1>(tSrS)>>{});
@@ -302,6 +303,12 @@ fmhaForward(PrecType const *Q, CUTE_GRID_CONSTANT TiledCopyQ const tmaLoadQ,
 
     print("nTilesOfK: "); print(nTilesOfK); print("\n"); // 1024 / 64 = 16
 
+    // auto tOrPLayout = ReshapeTStoTP()(tSrS, tOrS);
+    // auto tOrP = make_tensor(tSrS.data(), tOrPLayout);
+    print("tSrS: "); print(tSrS); print("\n"); // ptr[32b](0x7f3249ffed50) o ((_2,_2,_8),_1,_1):((_1,_2,_4),_0,_0)
+    print("tOrS: "); print(tOrS); print("\n"); // ptr[16b](0x7f3249ffedd0) o ((_2,_2,_2),_1,_4):((_1,_2,_4),_0,_8)
+    print("tOrPLayout: "); print(tOrPLayout); print("\n"); //  ((_2,_2,_2),_1,_4):((_1,_2,_4),_0,_8)
+    print("tOrP: "); print(tOrP); print("\n"); // ptr[32b](0x7f3249ffed50) o ((_2,_2,_2),_1,_4):((_1,_2,_4),_0,_8)
   }  
 // #endif
 
@@ -433,8 +440,7 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
   auto ptrK = reinterpret_cast<MmaB const *>(tensorK);
   auto ptrV = reinterpret_cast<MmaB const *>(tensorV);
   auto tileShapeQ = make_shape(bM{}, bK{});
-  auto smemLayoutQ =
-      tile_to_shape(GMMA::Layout_K_SW128_Atom<MmaA>{}, tileShapeQ);
+  auto smemLayoutQ = tile_to_shape(GMMA::Layout_K_SW128_Atom<MmaA>{}, tileShapeQ);
   Layout gmemLayoutQ =
       make_layout(make_shape(M, K, H, B), make_stride(K * H, 1, K, H * M * K));
   Tensor gQ = make_tensor(ptrQ, gmemLayoutQ);
@@ -442,8 +448,7 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
       make_tma_copy(SM90_TMA_LOAD{}, gQ, smemLayoutQ, tileShapeQ, Int<1>{});
 
   auto tileShapeK = make_shape(bN{}, bK{});
-  auto smemLayoutK =
-      tile_to_shape(GMMA::Layout_K_SW128_Atom<MmaB>{}, tileShapeK);
+  auto smemLayoutK = tile_to_shape(GMMA::Layout_K_SW128_Atom<MmaB>{}, tileShapeK);
   Layout gmemLayoutK =
       make_layout(make_shape(N, K, H, B), make_stride(K * H, 1, K, H * N * K));
   Tensor gK = make_tensor(ptrK, gmemLayoutK);
@@ -455,12 +460,10 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
   Layout gmemLayoutS =
       make_layout(make_shape(M, N, H, B), make_stride(N, 1, N * M, H * M * N));
   // Used only for Second matmul with Q and V.
-  auto smemLayoutS =
-      tile_to_shape(GMMA::Layout_K_SW128_Atom<MmaA>{}, tileShapeS);
+  auto smemLayoutS = tile_to_shape(GMMA::Layout_K_SW128_Atom<MmaA>{}, tileShapeS);
 
   auto tileShapeV = make_shape(bN{}, bK{});
-  auto smemLayoutV =
-      tile_to_shape(GMMA::Layout_K_SW128_Atom<MmaB>{}, tileShapeV);
+  auto smemLayoutV = tile_to_shape(GMMA::Layout_K_SW128_Atom<MmaB>{}, tileShapeV); // (8,64)o(64,1)
   Layout gmemLayoutV =
       make_layout(make_shape(N, K, H, B), make_stride(K * H, 1, K, H * K * N));
   Tensor gV = make_tensor(ptrV, gmemLayoutV);
@@ -469,8 +472,19 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
 
   // Layout for Vtranspose. For use in GEMM-II.
   auto tileShapeVt = make_shape(bK{}, bN{});
-  auto smemLayoutVt =
-      composition(smemLayoutV, make_layout(tileShapeVt, LayoutRight{}));
+  // auto smemLayoutVt = composition(smemLayoutV, make_layout(tileShapeVt, LayoutRight{}));
+  auto layoutVt = make_layout(tileShapeVt, LayoutRight{});
+  // auto layoutVt = right_inverse(make_layout(tileShapeV));
+  auto smemLayoutVt = composition(smemLayoutV, layoutVt);
+// #ifdef LP_DEBUG
+  if (thread0()) {
+    print("tileShapeV: "); print(tileShapeV); print("\n"); // (_64,_576)
+    // print("tileShapeVt: "); print(tileShapeVt); print("\n"); //  (_576,_64)
+    print("smemLayoutV: "); print(smemLayoutV); print("\n");    // smemLayoutV: Sw<3,4,3> o smem_ptr[16b](unset) o (_64,(_64,_9)):(_64,(_1,_4096))
+    print("layoutVt: "); print(layoutVt); print("\n"); // (_576,_64):(_64,_1)
+    print("smemLayoutVt: "); print(smemLayoutVt); print("\n"); // smemLayoutVt: Sw<3,4,3> o smem_ptr[16b](unset) o ((_64,_9),_64):((_1,_4096),_64)
+  }
+// #endif
 
   auto tileShapeO = make_shape(bM{}, bK{});
   Layout gmemLayoutO =
@@ -494,6 +508,10 @@ void fmhaForwardDevice(int SEQLEN, int KEYLEN, int NUMHEADS, int BATCH,
       MmaTileShape{}));
 
   // USE RS version of GMMA for GEMM-II (Default).
+  // using TiledMma1 = decltype(cute::make_tiled_mma(
+  //     cute::GMMA::rs_op_selector<MmaA, MmaB, MmaC, Shape<bM, bK, bN>,
+  //                                GMMA::Major::K, GMMA::Major::MN>(),
+  //     MmaTileShape{}));
   using TiledMma1 = decltype(cute::make_tiled_mma(
       cute::GMMA::rs_op_selector<MmaA, MmaB, MmaC, Shape<bM, bK, bN>,
                                  GMMA::Major::K, GMMA::Major::MN>(),
@@ -790,8 +808,8 @@ int main(int argc, char const **argv) {
   int seqLength, batchSize, dimSize, iterations, nStreams, kHeadSize;
   bool refCheck, printValues;
   cmd.get_cmd_line_argument("batch-size", batchSize, 16);
-  cmd.get_cmd_line_argument("dim-size", dimSize, 2048);
-  cmd.get_cmd_line_argument("head-size", kHeadSize, 256);
+  cmd.get_cmd_line_argument("dim-size", dimSize, 2304);
+  cmd.get_cmd_line_argument("head-size", kHeadSize, 576);
   cmd.get_cmd_line_argument("seq-length", seqLength, 1024);
   cmd.get_cmd_line_argument("iterations", iterations, 1);
   cmd.get_cmd_line_argument("num-cuda-streams", nStreams, 1);
@@ -806,20 +824,25 @@ int main(int argc, char const **argv) {
 
   // Instantiate the function template for different HEADDIMS.
   // For now, only half_t is supported. TF32 is WIP.
-  if (kHeadSize == 64) {
-    testFmhaForward<cutlass::half_t, 64>(seqLength, seqLength, numHeads,
-                                         batchSize, iterations, refCheck,
-                                         printValues, nStreams);
-  } else if (kHeadSize == 128) {
-    testFmhaForward<cutlass::half_t, 128>(seqLength, seqLength, numHeads,
-                                          batchSize, iterations, refCheck,
-                                          printValues, nStreams);
-  } else if (kHeadSize == 256) {
-    testFmhaForward<cutlass::half_t, 256>(seqLength, seqLength, numHeads,
-                                          batchSize, iterations, refCheck,
-                                          printValues, nStreams);
-  } else if (kHeadSize == 512) {
-    testFmhaForward<cutlass::half_t, 512>(seqLength, seqLength, numHeads,
+  // if (kHeadSize == 64) {
+  //   testFmhaForward<cutlass::half_t, 64>(seqLength, seqLength, numHeads,
+  //                                        batchSize, iterations, refCheck,
+  //                                        printValues, nStreams);
+  // } else if (kHeadSize == 128) {
+  //   testFmhaForward<cutlass::half_t, 128>(seqLength, seqLength, numHeads,
+  //                                         batchSize, iterations, refCheck,
+  //                                         printValues, nStreams);
+  // } else if (kHeadSize == 256) {
+  //   testFmhaForward<cutlass::half_t, 256>(seqLength, seqLength, numHeads,
+  //                                         batchSize, iterations, refCheck,
+  //                                         printValues, nStreams);
+  // } else if (kHeadSize == 512) {
+  //   testFmhaForward<cutlass::half_t, 512>(seqLength, seqLength, numHeads,
+  //                                         batchSize, iterations, refCheck,
+  //                                         printValues, nStreams);
+  // } else 
+  if (kHeadSize == 576) {
+    testFmhaForward<cutlass::half_t, 576>(seqLength, seqLength, numHeads,
                                           batchSize, iterations, refCheck,
                                           printValues, nStreams);
   } else {
